@@ -21,6 +21,11 @@ enum GarmentStatus {
   WISHLIST
 }
 
+enum CalendarEntryType {
+  PLANNED
+  WORN
+}
+
 model User {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -31,6 +36,7 @@ model User {
   garments     Garment[]
   outfits      Outfit[]
   media        Media[]
+  calendarEntries OutfitCalendarEntry[]
 }
 
 model Session {
@@ -73,6 +79,7 @@ model Pose {
   y                 Float    @default(0)
   scale             Float    @default(1)
   rotation          Float    @default(0)
+  anchors           Json     @default("{\"head\":0.1,\"shoulders\":0.23,\"torso\":0.4,\"hips\":0.54,\"knees\":0.76,\"feet\":0.95}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   placements        GarmentPosePlacement[]
@@ -131,8 +138,25 @@ model Outfit {
   previewMediaId String?
   previewMedia   Media?      @relation("OutfitPreview", fields: [previewMediaId], references: [id])
   items          OutfitItem[]
+  calendarEntries OutfitCalendarEntry[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+}
+
+model OutfitCalendarEntry {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outfitId  String
+  outfit    Outfit            @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  date      DateTime          @db.Date
+  type      CalendarEntryType @default(PLANNED)
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
 }
 
 model OutfitItem {

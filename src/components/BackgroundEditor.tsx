@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Eraser,
   Paintbrush,
+  Redo2,
   RotateCcw,
   Undo2,
   WandSparkles,
@@ -18,11 +19,13 @@ export default function BackgroundEditor({
   const canvas = useRef<HTMLCanvasElement>(null);
   const original = useRef<HTMLCanvasElement | null>(null);
   const history = useRef<ImageData[]>([]);
+  const future = useRef<ImageData[]>([]);
   const [mode, setMode] = useState<"erase" | "restore">("erase");
   const [size, setSize] = useState(28);
   const [drawing, setDrawing] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    const source = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       const c = canvas.current!;
@@ -37,7 +40,8 @@ export default function BackgroundEditor({
       o.getContext("2d")!.drawImage(c, 0, 0);
       original.current = o;
     };
-    img.src = URL.createObjectURL(file);
+    img.src = source;
+    return () => URL.revokeObjectURL(source);
   }, [file]);
   function pos(e: React.PointerEvent) {
     const c = canvas.current!,
@@ -52,6 +56,7 @@ export default function BackgroundEditor({
     history.current.push(
       c.getContext("2d")!.getImageData(0, 0, c.width, c.height),
     );
+    future.current = [];
     if (history.current.length > 12) history.current.shift();
     setDrawing(true);
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -81,7 +86,21 @@ export default function BackgroundEditor({
   }
   function undo() {
     const state = history.current.pop();
-    if (state) canvas.current!.getContext("2d")!.putImageData(state, 0, 0);
+    if (state) {
+      const c = canvas.current!,
+        ctx = c.getContext("2d")!;
+      future.current.push(ctx.getImageData(0, 0, c.width, c.height));
+      ctx.putImageData(state, 0, 0);
+    }
+  }
+  function redo() {
+    const state = future.current.pop();
+    if (state) {
+      const c = canvas.current!,
+        ctx = c.getContext("2d")!;
+      history.current.push(ctx.getImageData(0, 0, c.width, c.height));
+      ctx.putImageData(state, 0, 0);
+    }
   }
   function reset() {
     if (original.current)
@@ -96,9 +115,17 @@ export default function BackgroundEditor({
       const img = new Image();
       img.onload = () => {
         const c = canvas.current!;
-        c.width = img.width;
-        c.height = img.height;
-        c.getContext("2d")!.drawImage(img, 0, 0);
+        const scale = Math.min(1, 1000 / Math.max(img.width, img.height));
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+        history.current = [];
+        future.current = [];
+        URL.revokeObjectURL(url);
+        setBusy(false);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
         setBusy(false);
       };
       img.src = url;
@@ -141,6 +168,13 @@ export default function BackgroundEditor({
           onClick={undo}
         >
           <Undo2 size={17} />
+        </button>
+        <button
+          className="btn btn-icon btn-ghost"
+          aria-label="Rehacer"
+          onClick={redo}
+        >
+          <Redo2 size={17} />
         </button>
         <button
           className="btn btn-icon btn-ghost"

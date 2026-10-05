@@ -1,10 +1,21 @@
 "use client";
+
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Image as KImage, Layer, Stage, Transformer } from "react-konva";
 import Konva from "konva";
-import { ArrowDown, ArrowUp, Heart, Plus, Save, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Layers3,
+  Save,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { moveLayer, normalizeLayers } from "@/lib/editor";
+import { zoneLabels } from "@/lib/labels";
 
 type Placement = {
   poseId: string;
@@ -14,17 +25,6 @@ type Placement = {
   scaleY: number;
   rotation: number;
   opacity: number;
-};
-export type OutfitBuilderData = {
-  poses: Pose[];
-  garments: Garment[];
-  outfit: null | {
-    id: string;
-    name: string;
-    notes: string;
-    poseId: string;
-    items: Array<Omit<Item, "instanceId" | "poseId"> & { id: string }>;
-  };
 };
 type Pose = { id: string; name: string; mediaId: string };
 type Garment = {
@@ -42,16 +42,29 @@ type Item = Placement & {
   layerOrder: number;
   instanceId: string;
 };
+export type OutfitBuilderData = {
+  poses: Pose[];
+  garments: Garment[];
+  outfit: null | {
+    id: string;
+    name: string;
+    notes: string;
+    poseId: string;
+    items: Array<Omit<Item, "instanceId" | "poseId"> & { id: string }>;
+  };
+};
+
 function useAsset(src?: string) {
-  const [img, setImg] = useState<HTMLImageElement>();
+  const [image, setImage] = useState<HTMLImageElement>();
   useEffect(() => {
     if (!src) return;
-    const i = new Image();
-    i.onload = () => setImg(i);
-    i.src = src;
+    const next = new Image();
+    next.onload = () => setImage(next);
+    next.src = src;
   }, [src]);
-  return img;
+  return image;
 }
+
 function CanvasImage({
   item,
   garment,
@@ -63,20 +76,20 @@ function CanvasImage({
   garment: Garment;
   selected: boolean;
   onSelect: () => void;
-  onChange: (p: Partial<Item>) => void;
+  onChange: (value: Partial<Item>) => void;
 }) {
   const image = useAsset(`/api/media/${garment.mediaId}`);
   const ref = useRef<Konva.Image>(null);
-  const tr = useRef<Konva.Transformer>(null);
+  const transformer = useRef<Konva.Transformer>(null);
   useLayoutEffect(() => {
-    if (selected && ref.current && tr.current) {
-      tr.current.nodes([ref.current]);
-      tr.current.getLayer()?.batchDraw();
+    if (selected && ref.current && transformer.current) {
+      transformer.current.nodes([ref.current]);
+      transformer.current.getLayer()?.batchDraw();
     }
   }, [selected]);
   if (!image) return null;
-  const width = image.width * item.scaleX,
-    height = image.height * item.scaleY;
+  const width = image.width * item.scaleX;
+  const height = image.height * item.scaleY;
   return (
     <>
       <KImage
@@ -95,21 +108,21 @@ function CanvasImage({
         onTap={onSelect}
         onDragEnd={(e) => onChange({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
-          const n = ref.current!;
+          const node = ref.current!;
           onChange({
-            x: n.x(),
-            y: n.y(),
-            rotation: n.rotation(),
-            scaleX: item.scaleX * n.scaleX(),
-            scaleY: item.scaleY * n.scaleY(),
+            x: node.x(),
+            y: node.y(),
+            rotation: node.rotation(),
+            scaleX: item.scaleX * node.scaleX(),
+            scaleY: item.scaleY * node.scaleY(),
           });
-          n.scaleX(1);
-          n.scaleY(1);
+          node.scaleX(1);
+          node.scaleY(1);
         }}
       />
       {selected && (
         <Transformer
-          ref={tr}
+          ref={transformer}
           rotateEnabled
           enabledAnchors={[
             "top-left",
@@ -121,14 +134,15 @@ function CanvasImage({
             "top-center",
             "bottom-center",
           ]}
-          boundBoxFunc={(o, n) =>
-            Math.abs(n.width) < 20 || Math.abs(n.height) < 20 ? o : n
+          boundBoxFunc={(oldBox, box) =>
+            Math.abs(box.width) < 20 || Math.abs(box.height) < 20 ? oldBox : box
           }
         />
       )}
     </>
   );
 }
+
 function BuilderStage({
   pose,
   items,
@@ -142,30 +156,25 @@ function BuilderStage({
   items: Item[];
   garments: Garment[];
   selected: string | null;
-  setSelected: (v: string | null) => void;
+  setSelected: (value: string | null) => void;
   setItems: React.Dispatch<React.SetStateAction<Item[]>>;
   stageRef: React.RefObject<Konva.Stage | null>;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(540);
-  const bg = useAsset(`/api/media/${pose.mediaId}`);
+  const [width, setWidth] = useState(360);
+  const background = useAsset(`/api/media/${pose.mediaId}`);
   useEffect(() => {
-    const el = container.current;
-    if (!el) return;
-    const obs = new ResizeObserver(() =>
-      setWidth(Math.min(650, el.clientWidth)),
+    const element = container.current;
+    if (!element) return;
+    const resize = new ResizeObserver(() =>
+      setWidth(Math.min(570, element.clientWidth)),
     );
-    obs.observe(el);
-    return () => obs.disconnect();
+    resize.observe(element);
+    return () => resize.disconnect();
   }, []);
   const ratio = width / 900;
-  function change(id: string, p: Partial<Item>) {
-    setItems((list) =>
-      list.map((i) => (i.instanceId === id ? { ...i, ...p } : i)),
-    );
-  }
   return (
-    <div className="canvas-wrap" ref={container}>
+    <div className="try-canvas" ref={container}>
       <Stage
         ref={stageRef}
         width={width}
@@ -177,25 +186,37 @@ function BuilderStage({
         }}
       >
         <Layer>
-          {bg && <KImage image={bg} width={900} height={1200} />}{" "}
-          {normalizeLayers(items).map((item) => {
-            const garment = garments.find((g) => g.id === item.garmentId)!;
-            return (
-              <CanvasImage
-                key={item.instanceId}
-                item={item}
-                garment={garment}
-                selected={selected === item.instanceId}
-                onSelect={() => setSelected(item.instanceId)}
-                onChange={(p) => change(item.instanceId, p)}
-              />
-            );
-          })}
+          {background && (
+            <KImage image={background} width={900} height={1200} />
+          )}{" "}
+          {normalizeLayers(items).map((item) => (
+            <CanvasImage
+              key={item.instanceId}
+              item={item}
+              garment={garments.find(
+                (garment) => garment.id === item.garmentId,
+              )!}
+              selected={selected === item.instanceId}
+              onSelect={() => setSelected(item.instanceId)}
+              onChange={(value) =>
+                setItems((list) =>
+                  list.map((candidate) =>
+                    candidate.instanceId === item.instanceId
+                      ? { ...candidate, ...value }
+                      : candidate,
+                  ),
+                )
+              }
+            />
+          ))}
         </Layer>
       </Stage>
     </div>
   );
 }
+
+const zoneOrder = ["HEAD", "TORSO", "LEGS", "FEET", "ACCESSORY"];
+
 export default function OutfitBuilder({
   poses,
   garments,
@@ -205,287 +226,343 @@ export default function OutfitBuilder({
   const [poseId, setPoseId] = useState(outfit?.poseId || poses[0]?.id || "");
   const [items, setItems] = useState<Item[]>(
     () =>
-      outfit?.items?.map((i) => ({
-        ...i,
+      outfit?.items.map((item) => ({
+        ...item,
         poseId: outfit.poseId,
-        instanceId: i.id,
+        instanceId: item.id,
       })) || [],
   );
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState(outfit?.name || "");
   const [notes, setNotes] = useState(outfit?.notes || "");
-  const [zone, setZone] = useState("ALL");
   const [busy, setBusy] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
-  const pose = poses.find((p) => p.id === poseId);
-  const active = items.find((i) => i.instanceId === selected);
-  function add(g: Garment) {
-    const preset = g.placements.find((p) => p.poseId === poseId);
+  const pose = poses.find((item) => item.id === poseId);
+  const active = items.find((item) => item.instanceId === selected);
+  function add(garment: Garment) {
+    const preset = garment.placements.find((item) => item.poseId === poseId);
     const defaults: Record<string, [number, number, number]> = {
-      HEAD: [450, 170, 0.3],
-      TORSO: [450, 430, 0.5],
+      HEAD: [450, 150, 0.3],
+      TORSO: [450, 420, 0.5],
       LEGS: [450, 760, 0.55],
       FEET: [450, 1080, 0.35],
-      ACCESSORY: [500, 480, 0.35],
+      ACCESSORY: [520, 430, 0.32],
     };
-    const [x, y, s] = defaults[g.zone] || defaults.ACCESSORY;
+    const [x, y, scale] = defaults[garment.zone] || defaults.ACCESSORY;
     const item: Item = {
-      garmentId: g.id,
-      zone: g.zone,
+      garmentId: garment.id,
+      zone: garment.zone,
       layerOrder: items.length,
       instanceId: crypto.randomUUID(),
+      poseId,
       x: preset?.x ?? x,
       y: preset?.y ?? y,
-      scaleX: preset?.scaleX ?? s,
-      scaleY: preset?.scaleY ?? s,
+      scaleX: preset?.scaleX ?? scale,
+      scaleY: preset?.scaleY ?? scale,
       rotation: preset?.rotation ?? 0,
       opacity: preset?.opacity ?? 1,
-      poseId,
     };
-    setItems((v) => [...v, item]);
+    setItems((old) => [...old, item]);
     setSelected(item.instanceId);
   }
   function remove() {
-    setItems((v) =>
-      normalizeLayers(v.filter((i) => i.instanceId !== selected)),
+    setItems((old) =>
+      normalizeLayers(old.filter((item) => item.instanceId !== selected)),
     );
     setSelected(null);
   }
-  function layer(dir: -1 | 1) {
+  function layer(direction: -1 | 1) {
     const sorted = normalizeLayers(items);
-    const idx = sorted.findIndex((i) => i.instanceId === selected);
-    setItems(moveLayer(sorted, idx, dir));
+    setItems(
+      moveLayer(
+        sorted,
+        sorted.findIndex((item) => item.instanceId === selected),
+        direction,
+      ),
+    );
+  }
+  function updateActive(value: Partial<Item>) {
+    setItems((old) =>
+      old.map((item) =>
+        item.instanceId === selected ? { ...item, ...value } : item,
+      ),
+    );
   }
   async function save() {
-    if (!name.trim() || !pose || !stageRef.current) {
-      alert("Ponle un nombre al conjunto");
-      return;
-    }
+    if (!name.trim() || !pose || !stageRef.current)
+      return alert("Ponle un nombre al conjunto");
     setBusy(true);
     setSelected(null);
-    await new Promise((r) => setTimeout(r, 80));
-    const dataUrl = stageRef.current.toDataURL({
-      pixelRatio: 1.5,
-      mimeType: "image/jpeg",
-      quality: 0.9,
-    });
-    const preview = await (await fetch(dataUrl)).blob();
-    const payload = {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const preview = await (
+      await fetch(
+        stageRef.current.toDataURL({
+          pixelRatio: 1.5,
+          mimeType: "image/jpeg",
+          quality: 0.9,
+        }),
+      )
+    ).blob();
+    const data = {
       name: name.trim(),
       notes,
       poseId,
-      items: normalizeLayers(items).map((i) => ({
-        garmentId: i.garmentId,
-        zone: i.zone,
-        layerOrder: i.layerOrder,
-        x: i.x,
-        y: i.y,
-        scaleX: i.scaleX,
-        scaleY: i.scaleY,
-        rotation: i.rotation,
-        opacity: i.opacity,
-      })),
+      items: normalizeLayers(items).map(
+        ({
+          garmentId,
+          zone,
+          layerOrder,
+          x,
+          y,
+          scaleX,
+          scaleY,
+          rotation,
+          opacity,
+        }) => ({
+          garmentId,
+          zone,
+          layerOrder,
+          x,
+          y,
+          scaleX,
+          scaleY,
+          rotation,
+          opacity,
+        }),
+      ),
     };
     const fd = new FormData();
-    fd.set("data", JSON.stringify(payload));
+    fd.set("data", JSON.stringify(data));
     fd.set(
       "preview",
       new File([preview], "conjunto.jpg", { type: "image/jpeg" }),
     );
-    const res = await fetch(
+    const response = await fetch(
       outfit ? `/api/outfits/${outfit.id}` : "/api/outfits",
       { method: outfit ? "PUT" : "POST", body: fd },
     );
-    if (res.ok) {
-      const saved = await res.json();
-      router.push(`/conjuntos/${saved.id}`);
-      router.refresh();
-    } else {
-      alert((await res.json()).error || "No se pudo guardar");
+    if (!response.ok) {
       setBusy(false);
+      return alert((await response.json()).error || "No se pudo guardar");
     }
+    const saved = await response.json();
+    router.push(`/conjuntos/${saved.id}`);
+    router.refresh();
   }
   if (!poses.length)
     return (
       <div className="empty">
         <h2>Primero necesitas una pose</h2>
-        <p>Sube y alinea una foto de cuerpo entero antes de crear conjuntos.</p>
-        <a className="btn btn-primary" href="/poses/nueva">
+        <p>Sube y alinea una foto de cuerpo entero.</p>
+        <Link className="btn btn-primary" href="/poses/nueva">
           Crear pose
-        </a>
+        </Link>
       </div>
     );
   return (
-    <div className="editor">
-      <aside className="panel">
-        <label className="label">
-          Pose
-          <select
-            className="select"
-            value={poseId}
-            onChange={(e) => {
-              if (
-                items.length &&
-                !confirm(
-                  "Cambiar de pose quitará las prendas actuales. ¿Continuar?",
-                )
-              )
-                return;
-              setPoseId(e.target.value);
-              setItems([]);
-              setSelected(null);
-            }}
-          >
-            {poses.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="filters" style={{ marginTop: 14 }}>
-          {["ALL", "TORSO", "LEGS", "FEET", "HEAD", "ACCESSORY"].map((z) => (
+    <div className="try-studio">
+      <div className="try-topbar">
+        <div className="pose-selector">
+          {poses.map((item) => (
             <button
-              key={z}
-              className={`btn ${zone === z ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setZone(z)}
+              key={item.id}
+              className={poseId === item.id ? "active" : ""}
+              onClick={() => {
+                if (
+                  item.id === poseId ||
+                  (items.length &&
+                    !confirm(
+                      "Cambiar de pose quitará las prendas actuales. ¿Continuar?",
+                    ))
+                )
+                  return;
+                setPoseId(item.id);
+                setItems([]);
+                setSelected(null);
+              }}
             >
-              {z === "ALL" ? "Todo" : z.toLowerCase()}
+              <img src={`/api/media/${item.mediaId}`} alt="" />
+              <span>{item.name}</span>
             </button>
           ))}
         </div>
-        {garments
-          .filter((g) => zone === "ALL" || g.zone === zone)
-          .map((g) => (
-            <div className="garment-pick" key={g.id}>
-              <img src={`/api/media/${g.thumbId}`} alt="" />
-              <div>
-                <b style={{ fontSize: 13 }}>{g.name}</b>
-                <div className="subtle" style={{ fontSize: 10 }}>
-                  {g.zone}{" "}
-                  {g.status === "WISHLIST" && (
-                    <Heart size={10} fill="currentColor" />
-                  )}
-                </div>
-              </div>
-              <button
-                className="btn btn-icon"
-                onClick={() => add(g)}
-                aria-label={`Añadir ${g.name}`}
-              >
-                <Plus size={18} />
-              </button>
-            </div>
-          ))}
-      </aside>
-      {pose && (
-        <BuilderStage
-          pose={pose}
-          items={items}
-          garments={garments}
-          selected={selected}
-          setSelected={setSelected}
-          setItems={setItems}
-          stageRef={stageRef}
-        />
-      )}
-      <aside className="panel">
-        <label className="label">
-          Nombre
-          <input
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Look de otoño"
+        <input className="try-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Nombre del look" aria-label="Nombre del conjunto" maxLength={80}/>
+        <div className="toolbar">
+          <button
+            className="icon-btn"
+            title="Datos del conjunto"
+            onClick={() => setDetailsOpen(true)}
+          >
+            <SlidersHorizontal />
+          </button>
+          <button
+            className="icon-btn"
+            title="Capas"
+            onClick={() => setLayersOpen(true)}
+          >
+            <Layers3 />
+            <i>{items.length}</i>
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={busy || !items.length}
+            onClick={() => void save()}
+          >
+            <Save size={16} />
+            <span>{busy ? "Guardando…" : "Guardar"}</span>
+          </button>
+        </div>
+      </div>
+      <div className="try-space">
+        {pose && (
+          <BuilderStage
+            pose={pose}
+            items={items}
+            garments={garments}
+            selected={selected}
+            setSelected={setSelected}
+            setItems={setItems}
+            stageRef={stageRef}
           />
-        </label>
-        <label className="label" style={{ marginTop: 12 }}>
-          Notas
-          <textarea
-            className="textarea"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Opcional"
-          />
-        </label>
-        <h3 style={{ marginTop: 22 }}>Capas</h3>
-        <p className="subtle" style={{ fontSize: 12 }}>
-          Lo último de la lista queda delante.
-        </p>
-        {normalizeLayers(items).map((i) => {
-          const g = garments.find((x) => x.id === i.garmentId)!;
-          return (
-            <button
-              className={`layer-row ${selected === i.instanceId ? "active" : ""}`}
-              key={i.instanceId}
-              onClick={() => setSelected(i.instanceId)}
-              style={{ border: 0, width: "100%", cursor: "pointer" }}
-            >
-              <img src={`/api/media/${g.thumbId}`} alt="" />
-              <span style={{ flex: 1, textAlign: "left", fontWeight: 700 }}>
-                {g.name}
-              </span>
-              <small>{i.layerOrder + 1}</small>
-            </button>
-          );
-        })}
-        {active && (
-          <>
-            <div className="toolbar" style={{ marginTop: 12 }}>
-              <button
-                className="btn btn-icon btn-ghost"
-                title="Bajar capa"
-                onClick={() => layer(-1)}
-              >
-                <ArrowDown size={17} />
-              </button>
-              <button
-                className="btn btn-icon btn-ghost"
-                title="Subir capa"
-                onClick={() => layer(1)}
-              >
-                <ArrowUp size={17} />
-              </button>
-              <button
-                className="btn btn-icon btn-danger"
-                title="Quitar"
-                onClick={remove}
-              >
-                <Trash2 size={17} />
-              </button>
-            </div>
-            <div className="range-row">
-              <span>Opacidad</span>
-              <input
-                type="range"
-                min=".1"
-                max="1"
-                step=".05"
-                value={active.opacity}
-                onChange={(e) =>
-                  setItems((v) =>
-                    v.map((i) =>
-                      i.instanceId === active.instanceId
-                        ? { ...i, opacity: +e.target.value }
-                        : i,
-                    ),
-                  )
-                }
-              />
-              <b>{Math.round(active.opacity * 100)}%</b>
-            </div>
-          </>
         )}
-        <button
-          className="btn btn-primary"
-          style={{ width: "100%", marginTop: 20 }}
-          onClick={save}
-          disabled={busy || !items.length}
+        <div className="zone-rails">
+          {zoneOrder.map((zone) => (
+            <section
+              className={`zone-rail zone-${zone.toLowerCase()}`}
+              key={zone}
+            >
+              <b>{zoneLabels[zone]}</b>
+              <div>
+                {garments
+                  .filter((garment) => garment.zone === zone)
+                  .map((garment) => (
+                    <button
+                      key={garment.id}
+                      onClick={() => add(garment)}
+                      title={`Añadir ${garment.name}`}
+                    >
+                      <img src={`/api/media/${garment.thumbId}`} alt="" />
+                      <span>{garment.name}</span>
+                    </button>
+                  ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+      {active && (
+        <div className="active-controls">
+          <button
+            className="icon-btn"
+            title="Bajar capa"
+            onClick={() => layer(-1)}
+          >
+            <ArrowDown />
+          </button>
+          <button
+            className="icon-btn"
+            title="Subir capa"
+            onClick={() => layer(1)}
+          >
+            <ArrowUp />
+          </button>
+          <label>
+            <span>Opacidad</span>
+            <input
+              type="range"
+              min=".1"
+              max="1"
+              step=".05"
+              value={active.opacity}
+              onChange={(e) => updateActive({ opacity: +e.target.value })}
+            />
+          </label>
+          <button className="icon-btn danger" title="Quitar" onClick={remove}>
+            <Trash2 />
+          </button>
+          <button
+            className="icon-btn"
+            title="Cerrar controles"
+            onClick={() => setSelected(null)}
+          >
+            <X />
+          </button>
+        </div>
+      )}
+      {(layersOpen || detailsOpen) && (
+        <div
+          className="sheet-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setLayersOpen(false);
+              setDetailsOpen(false);
+            }
+          }}
         >
-          <Save size={18} />
-          {busy ? "Guardando…" : "Guardar conjunto"}
-        </button>
-      </aside>
+          <section className="bottom-sheet">
+            {" "}
+            <div className="sheet-head">
+              <h2>{layersOpen ? "Capas" : "Datos del conjunto"}</h2>
+              <button
+                className="icon-btn"
+                onClick={() => {
+                  setLayersOpen(false);
+                  setDetailsOpen(false);
+                }}
+              >
+                <X />
+              </button>
+            </div>
+            {detailsOpen ? (
+              <>
+                <label className="label">
+                  Nombre
+                  <input
+                    className="input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Look de otoño"
+                  />
+                </label>
+                <label className="label">
+                  Notas
+                  <textarea
+                    className="input"
+                    rows={3}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Opcional"
+                  />
+                </label>
+              </>
+            ) : (
+              <div className="layer-list">
+                {normalizeLayers(items).map((item) => {
+                  const garment = garments.find(
+                    (candidate) => candidate.id === item.garmentId,
+                  )!;
+                  return (
+                    <button
+                      key={item.instanceId}
+                      className={selected === item.instanceId ? "active" : ""}
+                      onClick={() => {
+                        setSelected(item.instanceId);
+                        setLayersOpen(false);
+                      }}
+                    >
+                      <img src={`/api/media/${garment.thumbId}`} alt="" />
+                      <span>{garment.name}</span>
+                      <small>{item.layerOrder + 1}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
