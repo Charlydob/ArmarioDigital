@@ -12,11 +12,13 @@ import {
   Save,
 } from "lucide-react";
 import { defaultAnchors, type PoseAnchors } from "@/lib/labels";
+import BackgroundEditor from "./BackgroundEditor";
 
 type PoseDraft = {
   id: string;
   name: string;
   originalMediaId: string;
+  normalizedMediaId: string;
   x: number;
   y: number;
   scale: number;
@@ -85,7 +87,7 @@ function Silhouette() {
 export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
   const router = useRouter();
   const stage = useRef<HTMLDivElement>(null);
-  const [step, setStep] = useState(pose ? 2 : 1);
+  const [step, setStep] = useState(pose ? 3 : 1);
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
   const [name, setName] = useState(pose?.name || "");
@@ -107,7 +109,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
   useEffect(() => {
     if (!pose) return;
     let active = true;
-    fetch(`/api/media/${pose.originalMediaId}`)
+    fetch(`/api/media/${pose.normalizedMediaId}`)
       .then((response) => response.blob())
       .then(compactPreview)
       .then((preview) => {
@@ -132,12 +134,24 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
       return alert("Elige una imagen JPG, PNG o WebP");
     if (next.size > 20 * 1024 * 1024)
       return alert("La imagen no puede superar 20 MB");
-    const preview = await compactPreview(next);
     setFile(next);
+    setStep(2);
+  }
+
+  function acceptCutout(_: Blob, preview: string) {
     setUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return preview;
     });
+    setStep(3);
+  }
+
+  async function recutOriginal() {
+    if (!pose) return;
+    const response = await fetch(`/api/media/${pose.originalMediaId}`);
+    if (!response.ok) return alert("No se pudo cargar la foto original");
+    const blob = await response.blob();
+    setFile(new File([blob], "pose-original", { type: blob.type }));
     setStep(2);
   }
 
@@ -174,8 +188,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
     canvas.width = 900;
     canvas.height = 1200;
     const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#ece8e3";
-    ctx.fillRect(0, 0, 900, 1200);
+    ctx.clearRect(0, 0, 900, 1200);
     const base = Math.min(900 / image.naturalWidth, 1200 / image.naturalHeight);
     const width = image.naturalWidth * base * t.scale,
       height = image.naturalHeight * base * t.scale;
@@ -188,11 +201,10 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
       canvas.toBlob(
         (value) =>
           value ? resolve(value) : reject(new Error("No se pudo exportar")),
-        "image/webp",
-        0.9,
+        "image/png",
       ),
     );
-    return new File([blob], "pose.webp", { type: "image/webp" });
+    return new File([blob], "pose.png", { type: "image/png" });
   }
 
   async function save() {
@@ -228,8 +240,10 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
             {step === 1
               ? "Elige una foto"
               : step === 2
-                ? "Alinea tu figura"
-                : "Ponle un nombre"}
+                ? "Recorta tu figura"
+                : step === 3
+                  ? "Alinea tu figura"
+                  : "Ponle un nombre"}
           </h1>
           <p className="subtle">
             Ajusta la silueta y arrastra cada guía a la altura correcta.
@@ -245,6 +259,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
           <i className="step on" />
           <i className={`step ${step >= 2 ? "on" : ""}`} />
           <i className={`step ${step >= 3 ? "on" : ""}`} />
+          <i className={`step ${step >= 4 ? "on" : ""}`} />
         </div>
         {step === 1 && (
           <label className="drop">
@@ -260,7 +275,13 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
             <span className="btn btn-primary">Seleccionar foto</span>
           </label>
         )}
-        {step === 2 && (
+        {step === 2 &&
+          (file ? (
+            <BackgroundEditor file={file} onAccept={acceptCutout} />
+          ) : (
+            <div className="empty">Preparando imagen…</div>
+          ))}
+        {step === 3 && (
           <>
             {!url ? (
               <div className="empty">Preparando imagen…</div>
@@ -338,6 +359,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
                 <span className="subtle drag-tip">
                   <Move size={15} /> Arrastra foto y guías
                 </span>
+                {pose && <button className="btn btn-ghost" onClick={() => void recutOriginal()}>Recortar de nuevo</button>}
                 <button
                   className="btn btn-ghost"
                   onClick={() => {
@@ -348,7 +370,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
                   <RotateCcw size={15} />
                   Restablecer
                 </button>
-                <button className="btn btn-primary" onClick={() => setStep(3)}>
+                <button className="btn btn-primary" onClick={() => setStep(4)}>
                   Continuar
                   <ArrowRight size={16} />
                 </button>
@@ -356,7 +378,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
             </div>
           </>
         )}
-        {step === 3 && (
+        {step === 4 && (
           <div className="pose-finish">
             <label className="label">
               Nombre de la pose
@@ -370,7 +392,7 @@ export default function PoseWizard({ pose }: { pose?: PoseDraft }) {
               />
             </label>
             <div className="toolbar spread">
-              <button className="btn btn-ghost" onClick={() => setStep(2)}>
+              <button className="btn btn-ghost" onClick={() => setStep(3)}>
                 <ArrowLeft size={16} />
                 Ajustar
               </button>

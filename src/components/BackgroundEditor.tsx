@@ -1,13 +1,23 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
 import {
+  Check,
   Eraser,
+  Hand,
   Paintbrush,
   Redo2,
   RotateCcw,
+  ScanLine,
   Undo2,
   WandSparkles,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
+
+type Mode = "erase" | "restore" | "polygon" | "pan";
+type Point = { x: number; y: number };
 
 export default function BackgroundEditor({
   file,
@@ -20,118 +30,198 @@ export default function BackgroundEditor({
   const original = useRef<HTMLCanvasElement | null>(null);
   const history = useRef<ImageData[]>([]);
   const future = useRef<ImageData[]>([]);
-  const [mode, setMode] = useState<"erase" | "restore">("erase");
+  const panStart = useRef<{
+    x: number;
+    y: number;
+    px: number;
+    py: number;
+  } | null>(null);
+  const [mode, setMode] = useState<Mode>("polygon");
   const [size, setSize] = useState(28);
   const [drawing, setDrawing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [points, setPoints] = useState<Point[]>([]);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dimensions, setDimensions] = useState({ width: 1, height: 1 });
+
   useEffect(() => {
     const source = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const c = canvas.current!;
-      const max = 1000;
-      const s = Math.min(1, max / Math.max(img.width, img.height));
-      c.width = Math.round(img.width * s);
-      c.height = Math.round(img.height * s);
-      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-      const o = document.createElement("canvas");
-      o.width = c.width;
-      o.height = c.height;
-      o.getContext("2d")!.drawImage(c, 0, 0);
-      original.current = o;
+    const image = new Image();
+    image.onload = () => {
+      const target = canvas.current!;
+      const scale = Math.min(1, 800 / Math.max(image.width, image.height));
+      target.width = Math.max(1, Math.round(image.width * scale));
+      target.height = Math.max(1, Math.round(image.height * scale));
+      target
+        .getContext("2d")!
+        .drawImage(image, 0, 0, target.width, target.height);
+      const copy = document.createElement("canvas");
+      copy.width = target.width;
+      copy.height = target.height;
+      copy.getContext("2d")!.drawImage(target, 0, 0);
+      original.current = copy;
+      setDimensions({ width: target.width, height: target.height });
     };
-    img.src = source;
+    image.src = source;
     return () => URL.revokeObjectURL(source);
   }, [file]);
-  function pos(e: React.PointerEvent) {
-    const c = canvas.current!,
-      r = c.getBoundingClientRect();
+
+  function position(event: React.PointerEvent) {
+    const target = canvas.current!;
+    const box = target.getBoundingClientRect();
     return {
-      x: ((e.clientX - r.left) * c.width) / r.width,
-      y: ((e.clientY - r.top) * c.height) / r.height,
+      x: ((event.clientX - box.left) * target.width) / box.width,
+      y: ((event.clientY - box.top) * target.height) / box.height,
     };
   }
-  function start(e: React.PointerEvent) {
-    const c = canvas.current!;
+  function snapshot() {
+    const target = canvas.current!;
     history.current.push(
-      c.getContext("2d")!.getImageData(0, 0, c.width, c.height),
+      target.getContext("2d")!.getImageData(0, 0, target.width, target.height),
     );
     future.current = [];
-    if (history.current.length > 12) history.current.shift();
-    setDrawing(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-    paint(e);
+    if (history.current.length > 6) history.current.shift();
   }
-  function paint(e: React.PointerEvent) {
-    if (!drawing && e.type !== "pointerdown") return;
-    const c = canvas.current!,
-      ctx = c.getContext("2d")!,
-      p = pos(e),
-      radius = (size * c.width) / c.getBoundingClientRect().width;
-    if (mode === "erase") {
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (original.current) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.drawImage(original.current, 0, 0);
-      ctx.restore();
+  function start(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (mode === "polygon") {
+      setPoints((old) => [...old, position(event)]);
+      return;
     }
-    ctx.globalCompositeOperation = "source-over";
+    if (mode === "pan") {
+      panStart.current = {
+        x: event.clientX,
+        y: event.clientY,
+        px: pan.x,
+        py: pan.y,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+    snapshot();
+    setDrawing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    paint(event, true);
+  }
+  function paint(event: React.PointerEvent<HTMLCanvasElement>, force = false) {
+    if (mode === "pan" && panStart.current) {
+      setPan({
+        x: panStart.current.px + event.clientX - panStart.current.x,
+        y: panStart.current.py + event.clientY - panStart.current.y,
+      });
+      return;
+    }
+    if ((!drawing && !force) || (mode !== "erase" && mode !== "restore"))
+      return;
+    const target = canvas.current!,
+      context = target.getContext("2d")!,
+      point = position(event),
+      radius = (size * target.width) / target.getBoundingClientRect().width;
+    if (mode === "erase") {
+      context.globalCompositeOperation = "destination-out";
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fill();
+    } else if (original.current) {
+      context.save();
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.clip();
+      context.globalCompositeOperation = "source-over";
+      context.drawImage(original.current, 0, 0, target.width, target.height);
+      context.restore();
+    }
+    context.globalCompositeOperation = "source-over";
+  }
+  function stop(event?: React.PointerEvent<HTMLCanvasElement>) {
+    setDrawing(false);
+    panStart.current = null;
+    if (event?.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+  function applyPolygon() {
+    if (points.length < 3) return;
+    snapshot();
+    const target = canvas.current!,
+      context = target.getContext("2d")!;
+    context.save();
+    context.globalCompositeOperation = "destination-in";
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+    context.closePath();
+    context.fill();
+    context.restore();
+    setPoints([]);
+    setMode("erase");
   }
   function undo() {
     const state = history.current.pop();
-    if (state) {
-      const c = canvas.current!,
-        ctx = c.getContext("2d")!;
-      future.current.push(ctx.getImageData(0, 0, c.width, c.height));
-      ctx.putImageData(state, 0, 0);
-    }
+    if (!state) return;
+    const target = canvas.current!,
+      context = target.getContext("2d")!;
+    future.current.push(
+      context.getImageData(0, 0, target.width, target.height),
+    );
+    context.putImageData(state, 0, 0);
   }
   function redo() {
     const state = future.current.pop();
-    if (state) {
-      const c = canvas.current!,
-        ctx = c.getContext("2d")!;
-      history.current.push(ctx.getImageData(0, 0, c.width, c.height));
-      ctx.putImageData(state, 0, 0);
-    }
+    if (!state) return;
+    const target = canvas.current!,
+      context = target.getContext("2d")!;
+    history.current.push(
+      context.getImageData(0, 0, target.width, target.height),
+    );
+    context.putImageData(state, 0, 0);
   }
   function reset() {
-    if (original.current)
-      canvas.current!.getContext("2d")!.drawImage(original.current, 0, 0);
+    if (!original.current) return;
+    const target = canvas.current!;
+    target.getContext("2d")!.clearRect(0, 0, target.width, target.height);
+    target
+      .getContext("2d")!
+      .drawImage(original.current, 0, 0, target.width, target.height);
+    history.current = [];
+    future.current = [];
+    setPoints([]);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   }
   async function auto() {
     setBusy(true);
     try {
       const { removeBackground } = await import("@imgly/background-removal");
-      const result = await removeBackground(file, { progress: () => {} });
+      const result = await removeBackground(file, {
+        model: "isnet_quint8",
+        output: { format: "image/png", quality: 1 },
+        progress: () => {},
+      });
       const url = URL.createObjectURL(result);
-      const img = new Image();
-      img.onload = () => {
-        const c = canvas.current!;
-        const scale = Math.min(1, 1000 / Math.max(img.width, img.height));
-        c.width = Math.round(img.width * scale);
-        c.height = Math.round(img.height * scale);
-        c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      const image = new Image();
+      image.onload = () => {
+        const target = canvas.current!,
+          scale = Math.min(1, 800 / Math.max(image.width, image.height));
+        target.width = Math.max(1, Math.round(image.width * scale));
+        target.height = Math.max(1, Math.round(image.height * scale));
+        target
+          .getContext("2d")!
+          .drawImage(image, 0, 0, target.width, target.height);
+        setDimensions({ width: target.width, height: target.height });
         history.current = [];
         future.current = [];
+        setPoints([]);
         URL.revokeObjectURL(url);
         setBusy(false);
       };
-      img.onerror = () => {
+      image.onerror = () => {
         URL.revokeObjectURL(url);
         setBusy(false);
       };
-      img.src = url;
+      image.src = url;
     } catch {
       alert(
-        "El recorte automático no ha podido completarse. Puedes usar el pincel manual.",
+        "El recorte automático no ha podido completarse. Delimita la prenda con Contorno.",
       );
       setBusy(false);
     }
@@ -141,74 +231,150 @@ export default function BackgroundEditor({
       if (blob) onAccept(blob, URL.createObjectURL(blob));
     }, "image/png");
   }
+
   return (
-    <div>
-      <div className="toolbar" style={{ marginBottom: 14 }}>
-        <button className="btn btn-primary" onClick={auto} disabled={busy}>
-          <WandSparkles size={17} />
-          {busy ? "Recortando…" : "Recorte automático"}
+    <div className="mask-editor">
+      <div className="mask-toolbar">
+        <button
+          className="btn btn-primary"
+          onClick={() => void auto()}
+          disabled={busy}
+        >
+          <WandSparkles />
+          {busy ? "Recortando…" : "Automático"}
+        </button>
+        <button
+          className={`btn ${mode === "polygon" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setMode("polygon")}
+        >
+          <ScanLine />
+          Contorno
         </button>
         <button
           className={`btn ${mode === "erase" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setMode("erase")}
         >
-          <Eraser size={17} />
+          <Eraser />
           Borrar
         </button>
         <button
           className={`btn ${mode === "restore" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setMode("restore")}
         >
-          <Paintbrush size={17} />
+          <Paintbrush />
           Restaurar
         </button>
         <button
-          className="btn btn-icon btn-ghost"
-          aria-label="Deshacer"
-          onClick={undo}
+          className={`btn btn-icon ${mode === "pan" ? "btn-primary" : "btn-ghost"}`}
+          aria-label="Mover lienzo"
+          onClick={() => setMode("pan")}
         >
-          <Undo2 size={17} />
-        </button>
-        <button
-          className="btn btn-icon btn-ghost"
-          aria-label="Rehacer"
-          onClick={redo}
-        >
-          <Redo2 size={17} />
-        </button>
-        <button
-          className="btn btn-icon btn-ghost"
-          aria-label="Reiniciar"
-          onClick={reset}
-        >
-          <RotateCcw size={17} />
+          <Hand />
         </button>
       </div>
-      <div className="range-row">
-        <span>Pincel</span>
-        <input
-          type="range"
-          min="5"
-          max="90"
-          value={size}
-          onChange={(e) => setSize(+e.target.value)}
-        />
-        <b>{size}</b>
+      {mode === "polygon" && (
+        <div className="mask-hint">
+          <span>Toca puntos alrededor de la figura y cierra la selección.</span>
+          <button
+            className="btn btn-primary"
+            disabled={points.length < 3}
+            onClick={applyPolygon}
+          >
+            <Check />
+            Aplicar
+          </button>
+          <button
+            className="btn btn-ghost"
+            disabled={!points.length}
+            onClick={() => setPoints([])}
+          >
+            <X />
+            Limpiar
+          </button>
+        </div>
+      )}
+      {(mode === "erase" || mode === "restore") && (
+        <label className="range-row">
+          <span>Pincel</span>
+          <input
+            type="range"
+            min="5"
+            max="90"
+            value={size}
+            onChange={(event) => setSize(+event.target.value)}
+          />
+          <b>{size}</b>
+        </label>
+      )}
+      <div className="mask-viewport">
+        <div
+          className="mask-surface"
+          style={{
+            transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
+          }}
+        >
+          <canvas
+            ref={canvas}
+            className="mask-canvas"
+            onPointerDown={start}
+            onPointerMove={paint}
+            onPointerUp={stop}
+            onPointerCancel={stop}
+          />
+          {points.length > 0 && (
+            <svg
+              className="polygon-overlay"
+              viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+            >
+              <polyline
+                points={points
+                  .map((point) => `${point.x},${point.y}`)
+                  .join(" ")}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={Math.max(2, dimensions.width / 250)}
+              />
+              {points.map((point, index) => (
+                <circle
+                  key={index}
+                  cx={point.x}
+                  cy={point.y}
+                  r={Math.max(4, dimensions.width / 120)}
+                  fill="currentColor"
+                />
+              ))}
+            </svg>
+          )}
+        </div>
       </div>
-      <canvas
-        ref={canvas}
-        className="mask-canvas"
-        onPointerDown={start}
-        onPointerMove={paint}
-        onPointerUp={() => setDrawing(false)}
-        onPointerCancel={() => setDrawing(false)}
-      />
-      <div
-        className="toolbar"
-        style={{ justifyContent: "flex-end", marginTop: 16 }}
-      >
+      <div className="toolbar spread mask-footer">
+        <div className="toolbar">
+          <button
+            className="icon-btn"
+            aria-label="Alejar"
+            onClick={() => setZoom((value) => Math.max(0.7, value - 0.2))}
+          >
+            <ZoomOut />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Acercar"
+            onClick={() => setZoom((value) => Math.min(3, value + 0.2))}
+          >
+            <ZoomIn />
+          </button>
+          <button className="icon-btn" aria-label="Deshacer" onClick={undo}>
+            <Undo2 />
+          </button>
+          <button className="icon-btn" aria-label="Rehacer" onClick={redo}>
+            <Redo2 />
+          </button>
+          <button className="icon-btn" aria-label="Restablecer" onClick={reset}>
+            <RotateCcw />
+          </button>
+        </div>
         <button className="btn btn-primary" onClick={accept}>
-          Aceptar recorte
+          Aceptar PNG
         </button>
       </div>
     </div>
