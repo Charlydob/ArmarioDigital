@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
+import PwaRegister from "@/components/PwaRegister";
 import "./globals.css";
 
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -8,5 +9,5 @@ export const metadata: Metadata = { title: { default: "Armario Digital", templat
 export const viewport: Viewport = { themeColor: "#7a3f49", viewportFit: "cover" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es"><body className={`${sans.variable} ${serif.variable}`}>{children}</body></html>;
+  return <html lang="es"><body className={`${sans.variable} ${serif.variable}`}><PwaRegister/>{children}</body></html>;
 }
