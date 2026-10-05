@@ -22,6 +22,6 @@ Next.js 15 (standalone), React 19, TypeScript, Prisma/PostgreSQL, Konva y almace
 
 ## Producción
 
-El build usa `output: standalone`. En Hetzner, el artefacto vive en `/opt/armario-digital/current`, las imágenes en `/var/lib/armario-digital`, los secretos en `/etc/armario-digital.env` y el proceso en `armario-digital.service`. Caddy publica el servicio local `127.0.0.1:3012`. Las migraciones se aplican antes de cada reinicio con `npm run db:migrate` desde el checkout o con el Prisma CLI del artefacto de despliegue.
+El build usa `output: standalone`; el paso `postbuild` incorpora automáticamente los assets estáticos y públicos. En Hetzner, el artefacto vive en `/opt/armario-digital/current`, las imágenes en `/var/lib/armario-digital`, los secretos en `/etc/armario-digital.env` y el proceso en `armario-digital.service`. Caddy publica el servicio local `127.0.0.1:3012`. Las migraciones se aplican antes de cada reinicio con `npm run db:migrate` desde el checkout o con el Prisma CLI del artefacto de despliegue.
 
 Las imágenes nunca se sirven como ficheros públicos: `/api/media/:id` exige una sesión válida y comprueba el propietario.
