@@ -1,0 +1,3 @@
+{
+  "name":"Armario Digital","short_name":"Armario","description":"Tu armario y probador visual privado","start_url":"/","display":"standalone","background_color":"#f8f5f1","theme_color":"#7a3f49","icons":[{"src":"/icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

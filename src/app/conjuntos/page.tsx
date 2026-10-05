@@ -1,0 +1,7 @@
+import Link from "next/link";
+import { Images,Plus } from "lucide-react";
+import AppShell from "@/components/AppShell";
+import { requireUser } from "@/lib/auth";
+import { db } from "@/lib/db";
+
+export default async function OutfitsPage(){const user=await requireUser();const outfits=await db.outfit.findMany({where:{ownerId:user.id},include:{previewMedia:true,_count:{select:{items:true}}},orderBy:{updatedAt:"desc"}});return <AppShell><header className="page-head"><div><div className="eyebrow">Looks guardados</div><h1>Conjuntos</h1><p className="subtle">Ideas listas para volver a probar y cambiar.</p></div><Link className="btn btn-primary" href="/probar"><Plus size={18}/><span className="btn-label-hide">Nuevo conjunto</span></Link></header>{outfits.length?<div className="grid">{outfits.map(o=><Link className="card" key={o.id} href={`/conjuntos/${o.id}`}><div className="image-card">{o.previewMedia&&<img src={`/api/media/${o.previewMedia.id}`} alt={o.name} loading="lazy"/>}</div><div className="card-body"><p className="card-title">{o.name}</p><span className="subtle" style={{fontSize:12}}>{o._count.items} prendas · {new Intl.DateTimeFormat("es",{day:"numeric",month:"short"}).format(o.updatedAt)}</span></div></Link>)}</div>:<div className="empty"><Images/><h2>Aún no hay conjuntos</h2><p>Entra al probador, combina varias prendas y guarda el resultado.</p><Link className="btn btn-primary" href="/probar">Crear conjunto</Link></div>}</AppShell>}

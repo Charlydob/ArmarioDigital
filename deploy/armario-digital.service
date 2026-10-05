@@ -1,0 +1,24 @@
+[Unit]
+Description=Armario Digital
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=armario
+Group=armario
+WorkingDirectory=/opt/armario-digital/current
+EnvironmentFile=/etc/armario-digital.env
+Environment=NODE_ENV=production
+Environment=PORT=3012
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/armario-digital
+
+[Install]
+WantedBy=multi-user.target

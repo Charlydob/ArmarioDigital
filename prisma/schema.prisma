@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BodyZone {
+  HEAD
+  TORSO
+  LEGS
+  FEET
+  ACCESSORY
+}
+
+enum GarmentStatus {
+  OWNED
+  WISHLIST
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+  poses        Pose[]
+  garments     Garment[]
+  outfits      Outfit[]
+  media        Media[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  expiresAt DateTime
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  path      String   @unique
+  mime      String
+  width     Int?
+  height    Int?
+  size      Int
+  createdAt DateTime @default(now())
+  poseOriginal Pose[] @relation("PoseOriginal")
+  poseNormalized Pose[] @relation("PoseNormalized")
+  garmentOriginal Garment[] @relation("GarmentOriginal")
+  garmentProcessed Garment[] @relation("GarmentProcessed")
+  garmentThumbnail Garment[] @relation("GarmentThumbnail")
+  outfitPreview Outfit[] @relation("OutfitPreview")
+}
+
+model Pose {
+  id                String   @id @default(cuid())
+  ownerId           String
+  owner             User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name              String
+  originalMediaId   String
+  originalMedia     Media    @relation("PoseOriginal", fields: [originalMediaId], references: [id])
+  normalizedMediaId String
+  normalizedMedia   Media    @relation("PoseNormalized", fields: [normalizedMediaId], references: [id])
+  x                 Float    @default(0)
+  y                 Float    @default(0)
+  scale             Float    @default(1)
+  rotation          Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  placements        GarmentPosePlacement[]
+  outfits           Outfit[]
+}
+
+model Garment {
+  id               String        @id @default(cuid())
+  ownerId          String
+  owner            User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name             String
+  brand            String?
+  notes            String?
+  zone             BodyZone
+  subtype          String
+  status           GarmentStatus @default(OWNED)
+  tags             String[]      @default([])
+  originalMediaId  String
+  originalMedia    Media         @relation("GarmentOriginal", fields: [originalMediaId], references: [id])
+  processedMediaId String
+  processedMedia   Media         @relation("GarmentProcessed", fields: [processedMediaId], references: [id])
+  thumbnailMediaId String?
+  thumbnailMedia   Media?        @relation("GarmentThumbnail", fields: [thumbnailMediaId], references: [id])
+  placements       GarmentPosePlacement[]
+  outfitItems      OutfitItem[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model GarmentPosePlacement {
+  id        String   @id @default(cuid())
+  garmentId String
+  poseId    String
+  garment   Garment  @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  pose      Pose     @relation(fields: [poseId], references: [id], onDelete: Cascade)
+  x         Float
+  y         Float
+  scaleX    Float
+  scaleY    Float
+  rotation  Float    @default(0)
+  opacity   Float    @default(1)
+  layer     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([garmentId, poseId])
+}
+
+model Outfit {
+  id             String      @id @default(cuid())
+  ownerId        String
+  owner          User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name           String
+  notes          String?
+  poseId         String
+  pose           Pose        @relation(fields: [poseId], references: [id], onDelete: Restrict)
+  previewMediaId String?
+  previewMedia   Media?      @relation("OutfitPreview", fields: [previewMediaId], references: [id])
+  items          OutfitItem[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model OutfitItem {
+  id         String   @id @default(cuid())
+  outfitId   String
+  outfit     Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  garmentId  String
+  garment    Garment  @relation(fields: [garmentId], references: [id], onDelete: Restrict)
+  zone       BodyZone
+  layerOrder Int
+  x          Float
+  y          Float
+  scaleX     Float
+  scaleY     Float
+  rotation   Float    @default(0)
+  opacity    Float    @default(1)
+  @@index([outfitId, layerOrder])
+}

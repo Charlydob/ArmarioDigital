@@ -1,0 +1,41 @@
+{
+  "name": "armario-digital",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "node .next/standalone/server.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
+    "@prisma/client": "6.12.0",
+    "bcryptjs": "^3.0.2",
+    "jose": "^6.1.0",
+    "konva": "^9.3.22",
+    "lucide-react": "^0.544.0",
+    "next": "16.3.8",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-konva": "19.0.10",
+    "sharp": "0.35.5",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "16.3.8",
+    "prisma": "6.12.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "5.0.3"
+  }
+}
