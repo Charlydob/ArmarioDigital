@@ -1540,3 +1540,5 @@ h3 {
 .carousel-center-overlay>button:disabled{background:#766e69;color:#fff;cursor:default;box-shadow:none}
 @media(max-width:900px){input,.input,select,textarea,.try-search>input,.compact-pose select{font-size:16px}.real-carousel .try-topbar{grid-template-columns:auto minmax(100px,1fr) auto;padding:5px}.real-carousel .try-name{display:block;grid-column:1/-1;grid-row:2;height:32px;font-size:16px}.body-carousel{height:68px}.embla-garment img{height:62px}.carousel-center-overlay>span{font-size:8px}}
 @media(max-width:430px){.embla-garment{flex-basis:35%}}
+.real-carousel .carousel-bands{z-index:16}
+@media(max-width:900px){.real-carousel .carousel-feet{top:86%!important}}
