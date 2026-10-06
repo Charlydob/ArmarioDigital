@@ -263,7 +263,7 @@ function BuilderStage({
         }}
       >
         <Layer>
-          {person && <KImage image={person} width={900} height={1200} />}{" "}
+          {person && <KImage image={person} width={900} height={1200} />}
           {normalizeLayers(items).map((item) => {
             const garment = garments.find(
               (candidate) => candidate.id === item.garmentId,
