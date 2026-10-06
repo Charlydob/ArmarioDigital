@@ -686,6 +686,7 @@ export default function OutfitBuilder({
           </button>
           <button
             className="btn btn-primary"
+            aria-label="Guardar conjunto"
             disabled={busy || !items.length || !stageReady}
             onClick={() => void save()}
           >
