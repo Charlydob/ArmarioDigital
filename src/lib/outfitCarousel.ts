@@ -5,6 +5,10 @@ export function wrapCarouselIndex(index: number, length: number) {
   return ((index % length) + length) % length;
 }
 
+export function carouselItemAt<T>(items: T[], index: number) {
+  return items.length ? items[wrapCarouselIndex(index, items.length)] : undefined;
+}
+
 export function carouselBandPositions(anchors: PoseAnchors) {
   return {
     HEAD: anchors.head,

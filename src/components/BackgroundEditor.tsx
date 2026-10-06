@@ -15,6 +15,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { decontaminateAlphaEdges } from "@/lib/alpha";
 
 type Mode = "erase" | "restore" | "polygon" | "pan";
 type Point = { x: number; y: number };
@@ -193,14 +194,7 @@ export default function BackgroundEditor({
     const target = canvas.current!;
     const context = target.getContext("2d")!;
     const image = context.getImageData(0, 0, target.width, target.height);
-    for (let index = 0; index < image.data.length; index += 4) {
-      const alpha = image.data[index + 3];
-      const brightness = Math.max(image.data[index], image.data[index + 1], image.data[index + 2]);
-      if (alpha > 0 && alpha < 235 && brightness > 220) {
-        const whiteFactor = Math.max(0, (255 - brightness) / 35);
-        image.data[index + 3] = Math.round(alpha * whiteFactor);
-      }
-    }
+    image.data.set(decontaminateAlphaEdges(image.data));
     context.putImageData(image, 0, 0);
   }
   async function auto() {

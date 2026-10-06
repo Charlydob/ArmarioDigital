@@ -20,8 +20,15 @@ import {
 } from "lucide-react";
 import { moveLayer, normalizeLayers } from "@/lib/editor";
 import { defaultAnchors, type PoseAnchors, zoneLabels } from "@/lib/labels";
-import { carouselBandPositions, wrapCarouselIndex } from "@/lib/outfitCarousel";
+import { carouselBandPositions, carouselItemAt, wrapCarouselIndex } from "@/lib/outfitCarousel";
 import { defaultOutfitName } from "@/lib/outfitName";
+import {
+  appendUniqueGarment,
+  applyPosePlacements,
+  placementRenderSize,
+  resolveGarmentPlacement,
+  serializeOutfitItems,
+} from "@/lib/placement";
 import AiTryOnButton from "./AiTryOnButton";
 
 type Placement = {
@@ -66,59 +73,71 @@ export type OutfitBuilderData = {
 };
 
 const zones = ["HEAD", "TORSO", "LEGS", "FEET", "ACCESSORY"] as const;
-const fallbacks: Record<string, [number, number, number]> = {
-  HEAD: [450, 155, 0.3],
-  TORSO: [450, 430, 0.5],
-  LEGS: [450, 760, 0.55],
-  FEET: [450, 1080, 0.35],
-  ACCESSORY: [525, 430, 0.32],
-};
+type CachedAsset = { image?: HTMLImageElement; promise?: Promise<HTMLImageElement> };
+const assetCache = new Map<string, CachedAsset>();
+
+function loadAsset(src: string) {
+  const cached = assetCache.get(src);
+  if (cached?.image) return Promise.resolve(cached.image);
+  if (cached?.promise) return cached.promise;
+  const entry: CachedAsset = {};
+  entry.promise = fetch(src, { credentials: "include" })
+    .then((response) => {
+      if (!response.ok) throw new Error("Imagen no disponible");
+      return response.blob();
+    })
+    .then(
+      (blob) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const objectUrl = URL.createObjectURL(blob);
+          const image = new Image();
+          image.onload = () => {
+            entry.image = image;
+            resolve(image);
+          };
+          image.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error("Imagen no válida"));
+          };
+          image.src = objectUrl;
+        }),
+    )
+    .catch((error) => {
+      assetCache.delete(src);
+      throw error;
+    });
+  assetCache.set(src, entry);
+  return entry.promise;
+}
 
 function useAsset(src?: string) {
-  const [image, setImage] = useState<HTMLImageElement>();
+  const [asset, setAsset] = useState<{
+    src?: string;
+    image?: HTMLImageElement;
+  }>(() => ({ src, image: src ? assetCache.get(src)?.image : undefined }));
   useEffect(() => {
     if (!src) return;
     let active = true;
-    let objectUrl = "";
-    fetch(src, { credentials: "include" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Imagen no disponible");
-        return response.blob();
-      })
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        const next = new Image();
-        next.onload = () => {
-          if (active) setImage(next);
-        };
-        next.src = objectUrl;
+    loadAsset(src)
+      .then((next) => {
+        if (active) setAsset({ src, image: next });
       })
       .catch(() => undefined);
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [src]);
-  return image;
+  return asset.src === src ? asset.image : src ? assetCache.get(src)?.image : undefined;
 }
 
-function placementFor(garment: Garment, poseId: string): Item {
-  const preset = garment.placements.find(
-    (placement) => placement.poseId === poseId,
-  );
-  const [x, y, scale] = fallbacks[garment.zone] || fallbacks.ACCESSORY;
+function placementFor(garment: Garment, poseId: string, anchors: PoseAnchors): Item {
+  const placement = resolveGarmentPlacement(garment, poseId, anchors);
   return {
     garmentId: garment.id,
     zone: garment.zone,
     layerOrder: 0,
     instanceId: `preview-${garment.id}`,
-    poseId,
-    x: preset?.x ?? x,
-    y: preset?.y ?? y,
-    scaleX: preset?.scaleX ?? scale,
-    scaleY: preset?.scaleY ?? scale,
-    rotation: preset?.rotation ?? 0,
-    opacity: preset?.opacity ?? 1,
+    ...placement,
   };
 }
 
@@ -149,8 +168,7 @@ function CanvasGarment({
     }
   }, [selected]);
   if (!image) return null;
-  const width = image.width * item.scaleX,
-    height = image.height * item.scaleY;
+  const { width, height } = placementRenderSize(image.width, image.height, item);
   return (
     <>
       <KImage
@@ -164,11 +182,9 @@ function CanvasGarment({
         offsetY={height / 2}
         rotation={item.rotation}
         opacity={preview ? Math.min(0.88, item.opacity) : item.opacity}
+        perfectDrawEnabled={false}
         draggable={!preview}
         listening={!preview}
-        shadowColor={preview ? "#743b47" : undefined}
-        shadowBlur={preview ? 12 : 0}
-        shadowOpacity={preview ? 0.28 : 0}
         onClick={onSelect}
         onTap={onSelect}
         onDragEnd={(event) =>
@@ -262,7 +278,7 @@ function BuilderStage({
           if (event.target === event.target.getStage()) setSelected(null);
         }}
       >
-        <Layer>
+        <Layer imageSmoothingEnabled>
           {person && <KImage image={person} width={900} height={1200} />}
           {normalizeLayers(items).map((item) => {
             const garment = garments.find(
@@ -310,6 +326,7 @@ function CarouselBand({
   onIndex,
   onAdd,
   onMotion,
+  addedGarmentIds,
 }: {
   zone: string;
   garments: Garment[];
@@ -318,6 +335,7 @@ function CarouselBand({
   onIndex: (index: number) => void;
   onAdd: (index: number) => void;
   onMotion: (index: number, pixels: number) => void;
+  addedGarmentIds: Set<string>;
 }) {
   const [viewportRef, api] = useEmblaCarousel({
     align: "center",
@@ -325,11 +343,12 @@ function CarouselBand({
     dragFree: false,
     containScroll: "trimSnaps",
     skipSnaps: true,
-    duration: 24,
+    duration: 20,
   });
   const [visualIndex, setVisualIndex] = useState(index);
   const onIndexRef = useRef(onIndex);
   const onMotionRef = useRef(onMotion);
+  const frameRef = useRef<number | null>(null);
   useEffect(() => {
     onIndexRef.current = onIndex;
     onMotionRef.current = onMotion;
@@ -341,7 +360,7 @@ function CarouselBand({
   }, [api, index, garments.length]);
   useEffect(() => {
     if (!api) return;
-    const report = () => {
+    const measure = () => {
       const root = api.rootNode();
       const center = root.getBoundingClientRect().left + root.clientWidth / 2;
       const slides = api.slideNodes();
@@ -352,24 +371,42 @@ function CarouselBand({
         const delta = rect.left + rect.width / 2 - center;
         if (Math.abs(delta) < Math.abs(offset)) { nearest = slideIndex; offset = delta; }
       });
-      setVisualIndex(nearest);
-      onMotionRef.current(nearest, offset);
+      return { index: nearest, offset };
+    };
+    const report = () => {
+      frameRef.current = null;
+      const measured = measure();
+      setVisualIndex(measured.index);
+      onMotionRef.current(measured.index, measured.offset);
+      return measured;
+    };
+    const scheduleReport = () => {
+      if (frameRef.current === null)
+        frameRef.current = requestAnimationFrame(report);
     };
     const settle = () => {
-      const selected = api.selectedScrollSnap();
-      setVisualIndex(selected);
-      onIndexRef.current(selected);
-      onMotionRef.current(selected, 0);
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+      const measured = measure();
+      setVisualIndex(measured.index);
+      onIndexRef.current(measured.index);
+      onMotionRef.current(measured.index, 0);
     };
-    api.on("scroll", report);
-    api.on("select", report);
+    api.on("scroll", scheduleReport);
+    api.on("select", scheduleReport);
     api.on("settle", settle);
     report();
-    return () => { api.off("scroll", report); api.off("select", report); api.off("settle", settle); };
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      api.off("scroll", scheduleReport);
+      api.off("select", scheduleReport);
+      api.off("settle", settle);
+    };
   }, [api]);
   if (!garments.length) return null;
   const safe = wrapCarouselIndex(visualIndex, garments.length);
-  const current = garments[safe];
+  const current = carouselItemAt(garments, safe)!;
+  const alreadyAdded = addedGarmentIds.has(current.id);
   return (
     <section
       className={`body-carousel carousel-${zone.toLowerCase()}`}
@@ -384,13 +421,14 @@ function CarouselBand({
       <div className="carousel-center-overlay">
         <span>{current.name}</span>
         <button
+          disabled={alreadyAdded}
           onClick={(event) => {
             event.stopPropagation();
             onAdd(safe);
           }}
         >
           <Check />
-          Fijar
+          {alreadyAdded ? "Ya añadida" : "Fijar"}
         </button>
       </div>
     </section>
@@ -422,8 +460,9 @@ export default function OutfitBuilder({
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [indices, setIndices] = useState<Record<string, number>>({});
-  const [swipes, setSwipes] = useState<Record<string, number>>({});
-  const [motionIndices, setMotionIndices] = useState<Record<string, number>>({});
+  const [motions, setMotions] = useState<
+    Record<string, { index: number; pixels: number }>
+  >({});
   const [exporting, setExporting] = useState(false);
   const [stageReady, setStageReady] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
@@ -431,6 +470,10 @@ export default function OutfitBuilder({
   const pose = poses.find((candidate) => candidate.id === poseId);
   const anchors = pose?.anchors || defaultAnchors;
   const active = items.find((item) => item.instanceId === selected);
+  const addedGarmentIds = useMemo(
+    () => new Set(items.map((item) => item.garmentId)),
+    [items],
+  );
   const byZone = useMemo(
     () =>
       Object.fromEntries(
@@ -441,18 +484,28 @@ export default function OutfitBuilder({
       ) as Record<string, Garment[]>,
     [garments],
   );
+  useEffect(() => {
+    poses.forEach((candidate) =>
+      void loadAsset(`/api/media/${candidate.mediaId}`).catch(() => undefined),
+    );
+    garments.forEach((garment) =>
+      void loadAsset(`/api/media/${garment.mediaId}`).catch(() => undefined),
+    );
+  }, [garments, poses]);
   const previews = exporting
     ? []
     : zones.flatMap((zone) => {
         const choices = byZone[zone];
         if (!choices.length) return [];
-        const index = wrapCarouselIndex(motionIndices[zone] ?? indices[zone] ?? 0, choices.length);
+        const motion = motions[zone];
+        const index = wrapCarouselIndex(motion?.index ?? indices[zone] ?? 0, choices.length);
         const garment = choices[index];
+        if (addedGarmentIds.has(garment.id)) return [];
         return [
           {
             garment,
-            item: placementFor(garment, poseId),
-            shift: swipes[zone] || 0,
+            item: placementFor(garment, poseId, anchors),
+            shift: motion?.pixels || 0,
           },
         ];
       });
@@ -478,36 +531,30 @@ export default function OutfitBuilder({
     if (!choices.length) return;
     const index = wrapCarouselIndex(activeIndex ?? indices[zone] ?? 0, choices.length);
     const garment = choices[index];
+    const existing = items.find((item) => item.garmentId === garment.id);
+    if (existing) {
+      setSelected(existing.instanceId);
+      return;
+    }
     const item = {
-      ...placementFor(garment, poseId),
+      ...placementFor(garment, poseId, anchors),
       instanceId: crypto.randomUUID(),
       layerOrder: items.length,
     };
-    setItems((old) => [...old, item]);
+    setItems((old) => appendUniqueGarment(old, item));
     setSelected(item.instanceId);
-    setZoneIndex(zone, index + 1);
   }
   function changePose(nextPoseId: string) {
     setStageReady(false);
     setPoseId(nextPoseId);
+    const nextPose = poses.find((candidate) => candidate.id === nextPoseId);
     setItems((old) =>
-      old.map((item) => {
-        const garment = garments.find(
-          (candidate) => candidate.id === item.garmentId,
-        );
-        if (!garment) return { ...item, poseId: nextPoseId };
-        const replacement = placementFor(garment, nextPoseId);
-        return {
-          ...item,
-          poseId: nextPoseId,
-          x: replacement.x,
-          y: replacement.y,
-          scaleX: replacement.scaleX,
-          scaleY: replacement.scaleY,
-          rotation: replacement.rotation,
-          opacity: replacement.opacity,
-        };
-      }),
+      applyPosePlacements(
+        old,
+        garments,
+        nextPoseId,
+        nextPose?.anchors || defaultAnchors,
+      ),
     );
     setSelected(null);
   }
@@ -557,29 +604,7 @@ export default function OutfitBuilder({
       name: name.trim() || defaultOutfitName(),
       notes,
       poseId,
-      items: normalizeLayers(items).map(
-        ({
-          garmentId,
-          zone,
-          layerOrder,
-          x,
-          y,
-          scaleX,
-          scaleY,
-          rotation,
-          opacity,
-        }) => ({
-          garmentId,
-          zone,
-          layerOrder,
-          x,
-          y,
-          scaleX,
-          scaleY,
-          rotation,
-          opacity,
-        }),
-      ),
+      items: serializeOutfitItems(items),
     };
     const fd = new FormData();
     fd.set("data", JSON.stringify(data));
@@ -722,9 +747,15 @@ export default function OutfitBuilder({
               top={bandTops[zone]}
               onIndex={(index) => setZoneIndex(zone, index)}
               onAdd={(index) => addZone(zone, index)}
+              addedGarmentIds={addedGarmentIds}
               onMotion={(index, pixels) => {
-                setMotionIndices((old) => ({ ...old, [zone]: index }));
-                setSwipes((old) => ({ ...old, [zone]: Math.max(-150, Math.min(150, pixels)) }));
+                setMotions((old) => ({
+                  ...old,
+                  [zone]: {
+                    index,
+                    pixels: Math.max(-150, Math.min(150, pixels)),
+                  },
+                }));
               }}
             />
           ))}

@@ -19,6 +19,18 @@ export const outfitSchema = z.object({
     x: z.number().finite(), y: z.number().finite(), scaleX: z.number().min(.05).max(8), scaleY: z.number().min(.05).max(8),
     rotation: z.number().min(-180).max(180), opacity: z.number().min(.05).max(1),
   })).max(100),
+}).superRefine((outfit, context) => {
+  const seen = new Set<string>();
+  outfit.items.forEach((item, index) => {
+    if (seen.has(item.garmentId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["items", index, "garmentId"],
+        message: "Una prenda no puede repetirse en el mismo conjunto",
+      });
+    }
+    seen.add(item.garmentId);
+  });
 });
 
 export const realPhotoOutfitSchema = z.object({
