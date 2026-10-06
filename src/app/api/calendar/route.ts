@@ -31,12 +31,12 @@ export async function GET(request: Request) {
     },
     include: {
       outfit: {
-        include: { previewMedia: true, _count: { select: { items: true } } },
+        include: { previewMedia: true, realPhotoMedia: true, _count: { select: { items: true } } },
       },
     },
     orderBy: { date: "asc" },
   });
-  return NextResponse.json(entries);
+  return NextResponse.json(entries.map((entry) => ({ ...entry, outfit: { ...entry.outfit, previewMedia: entry.outfit.realPhotoMedia || entry.outfit.previewMedia } })));
 }
 
 export async function POST(request: Request) {
@@ -72,9 +72,9 @@ export async function POST(request: Request) {
       type: parsed.data.type,
       notes: parsed.data.notes,
     },
-    include: { outfit: { include: { previewMedia: true } } },
+    include: { outfit: { include: { previewMedia: true, realPhotoMedia: true } } },
   });
-  return NextResponse.json(entry);
+  return NextResponse.json({ ...entry, outfit: { ...entry.outfit, previewMedia: entry.outfit.realPhotoMedia || entry.outfit.previewMedia } });
 }
 
 export async function DELETE(request: Request) {

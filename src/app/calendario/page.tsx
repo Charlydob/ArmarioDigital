@@ -7,7 +7,7 @@ export default async function CalendarPage() {
   const user = await requireUser();
   const outfits = await db.outfit.findMany({
     where: { ownerId: user.id },
-    select: { id: true, name: true, previewMediaId: true },
+    select: { id: true, name: true, previewMediaId: true, realPhotoMediaId: true },
     orderBy: { updatedAt: "desc" },
   });
   return (
@@ -22,7 +22,7 @@ export default async function CalendarPage() {
         </div>
       </header>
       <section className="card calendar-card">
-        <CalendarView outfits={outfits} />
+        <CalendarView outfits={outfits.map((outfit) => ({ id: outfit.id, name: outfit.name, previewMediaId: outfit.realPhotoMediaId || outfit.previewMediaId }))} />
       </section>
     </AppShell>
   );

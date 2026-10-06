@@ -188,6 +188,21 @@ export default function BackgroundEditor({
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }
+  function cleanupHalo() {
+    snapshot();
+    const target = canvas.current!;
+    const context = target.getContext("2d")!;
+    const image = context.getImageData(0, 0, target.width, target.height);
+    for (let index = 0; index < image.data.length; index += 4) {
+      const alpha = image.data[index + 3];
+      const brightness = Math.max(image.data[index], image.data[index + 1], image.data[index + 2]);
+      if (alpha > 0 && alpha < 235 && brightness > 220) {
+        const whiteFactor = Math.max(0, (255 - brightness) / 35);
+        image.data[index + 3] = Math.round(alpha * whiteFactor);
+      }
+    }
+    context.putImageData(image, 0, 0);
+  }
   async function auto() {
     setBusy(true);
     try {
@@ -270,6 +285,10 @@ export default function BackgroundEditor({
           onClick={() => setMode("pan")}
         >
           <Hand />
+        </button>
+        <button className="btn btn-ghost" onClick={cleanupHalo} title="Reduce bordes blancos semitransparentes; puedes deshacerlo">
+          <WandSparkles />
+          Limpiar halo
         </button>
       </div>
       {mode === "polygon" && (

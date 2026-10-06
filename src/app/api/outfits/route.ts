@@ -7,7 +7,7 @@ import { normalizeLayers } from "@/lib/editor";
 
 export async function GET() {
   const user = await requireUser();
-  return NextResponse.json(await db.outfit.findMany({ where: { ownerId: user.id }, include: { previewMedia: true, pose: { include: { normalizedMedia: true } }, items: { include: { garment: { include: { thumbnailMedia: true, processedMedia: true } } }, orderBy: { layerOrder: "asc" } }, _count: { select: { items: true } } }, orderBy: { updatedAt: "desc" } }));
+  return NextResponse.json(await db.outfit.findMany({ where: { ownerId: user.id }, include: { previewMedia: true, realPhotoMedia: true, pose: { include: { normalizedMedia: true } }, items: { include: { garment: { include: { thumbnailMedia: true, processedMedia: true } } }, orderBy: { layerOrder: "asc" } }, _count: { select: { items: true } } }, orderBy: { updatedAt: "desc" } }));
 }
 
 export async function POST(request: Request) {

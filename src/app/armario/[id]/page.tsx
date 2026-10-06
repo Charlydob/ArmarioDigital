@@ -18,7 +18,7 @@ export default async function GarmentDetailPage({
         placements: true,
         outfitItems: {
           select: {
-            outfit: { select: { id: true, name: true, previewMediaId: true } },
+            outfit: { select: { id: true, name: true, previewMediaId: true, realPhotoMediaId: true } },
           },
           distinct: ["outfitId"],
         },
@@ -52,7 +52,7 @@ export default async function GarmentDetailPage({
           name: pose.name,
           mediaId: pose.normalizedMediaId,
         }))}
-        outfits={garment.outfitItems.map((item) => item.outfit)}
+        outfits={garment.outfitItems.map((item) => ({ id: item.outfit.id, name: item.outfit.name, previewMediaId: item.outfit.realPhotoMediaId || item.outfit.previewMediaId }))}
       />
     </AppShell>
   );

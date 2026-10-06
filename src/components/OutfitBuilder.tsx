@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Image as KImage, Layer, Stage, Transformer } from "react-konva";
 import Konva from "konva";
+import useEmblaCarousel from "embla-carousel-react";
 import {
   ArrowDown,
   ArrowUp,
@@ -20,6 +21,8 @@ import {
 import { moveLayer, normalizeLayers } from "@/lib/editor";
 import { defaultAnchors, type PoseAnchors, zoneLabels } from "@/lib/labels";
 import { carouselBandPositions, wrapCarouselIndex } from "@/lib/outfitCarousel";
+import { defaultOutfitName } from "@/lib/outfitName";
+import AiTryOnButton from "./AiTryOnButton";
 
 type Placement = {
   poseId: string;
@@ -52,6 +55,7 @@ type Preview = { garment: Garment; item: Item; shift: number };
 export type OutfitBuilderData = {
   poses: Pose[];
   garments: Garment[];
+  aiTryOnEnabled: boolean;
   outfit: null | {
     id: string;
     name: string;
@@ -305,89 +309,90 @@ function CarouselBand({
   top,
   onIndex,
   onAdd,
-  onSwipe,
+  onMotion,
 }: {
   zone: string;
   garments: Garment[];
   index: number;
   top: number;
   onIndex: (index: number) => void;
-  onAdd: () => void;
-  onSwipe: (pixels: number) => void;
+  onAdd: (index: number) => void;
+  onMotion: (index: number, pixels: number) => void;
 }) {
-  const drag = useRef<{ x: number; pointer: number } | null>(null);
-  const suppressClick = useRef(false);
+  const [viewportRef, api] = useEmblaCarousel({
+    align: "center",
+    loop: garments.length > 2,
+    dragFree: false,
+    containScroll: "trimSnaps",
+    skipSnaps: true,
+    duration: 24,
+  });
+  const [visualIndex, setVisualIndex] = useState(index);
+  const onIndexRef = useRef(onIndex);
+  const onMotionRef = useRef(onMotion);
+  useEffect(() => {
+    onIndexRef.current = onIndex;
+    onMotionRef.current = onMotion;
+  }, [onIndex, onMotion]);
+  useEffect(() => {
+    if (!api) return;
+    const target = wrapCarouselIndex(index, garments.length);
+    if (api.selectedScrollSnap() !== target) api.scrollTo(target);
+  }, [api, index, garments.length]);
+  useEffect(() => {
+    if (!api) return;
+    const report = () => {
+      const root = api.rootNode();
+      const center = root.getBoundingClientRect().left + root.clientWidth / 2;
+      const slides = api.slideNodes();
+      let nearest = 0;
+      let offset = Number.POSITIVE_INFINITY;
+      slides.forEach((slide, slideIndex) => {
+        const rect = slide.getBoundingClientRect();
+        const delta = rect.left + rect.width / 2 - center;
+        if (Math.abs(delta) < Math.abs(offset)) { nearest = slideIndex; offset = delta; }
+      });
+      setVisualIndex(nearest);
+      onMotionRef.current(nearest, offset);
+    };
+    const settle = () => {
+      const selected = api.selectedScrollSnap();
+      setVisualIndex(selected);
+      onIndexRef.current(selected);
+      onMotionRef.current(selected, 0);
+    };
+    api.on("scroll", report);
+    api.on("select", report);
+    api.on("settle", settle);
+    report();
+    return () => { api.off("scroll", report); api.off("select", report); api.off("settle", settle); };
+  }, [api]);
   if (!garments.length) return null;
-  const safe = wrapCarouselIndex(index, garments.length);
-  const previous = garments[(safe - 1 + garments.length) % garments.length];
+  const safe = wrapCarouselIndex(visualIndex, garments.length);
   const current = garments[safe];
-  const next = garments[(safe + 1) % garments.length];
-  function finish(event: React.PointerEvent<HTMLElement>) {
-    if (!drag.current) return;
-    const delta = event.clientX - drag.current.x;
-    suppressClick.current = Math.abs(delta) > 34;
-    if (suppressClick.current) onIndex(delta < 0 ? safe + 1 : safe - 1);
-    onSwipe(0);
-    drag.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-  }
   return (
     <section
       className={`body-carousel carousel-${zone.toLowerCase()}`}
       style={{ top: `${top * 100}%` }}
-      onPointerDown={(event) => {
-        drag.current = { x: event.clientX, pointer: event.pointerId };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        if (drag.current)
-          onSwipe(
-            Math.max(-110, Math.min(110, event.clientX - drag.current.x)),
-          );
-      }}
-      onPointerUp={finish}
-      onPointerCancel={finish}
     >
       <span className="carousel-zone">{zoneLabels[zone]}</span>
-      <button
-        className="carousel-side previous"
-        onClick={() => {
-          if (suppressClick.current) {
-            suppressClick.current = false;
-            return;
-          }
-          onIndex(safe - 1);
-        }}
-        aria-label={`Anterior: ${previous.name}`}
-      >
-        <img src={`/api/media/${previous.mediaId}`} alt="" />
-      </button>
-      <div className="carousel-center">
+      <div className="embla" ref={viewportRef}>
+        <div className="embla-track">
+          {garments.map((garment, slideIndex) => <button type="button" className={`embla-garment ${slideIndex === safe ? "is-active" : ""}`} key={garment.id} onClick={() => api?.scrollTo(slideIndex)} aria-label={garment.name}><img src={`/api/media/${garment.mediaId}`} alt=""/></button>)}
+        </div>
+      </div>
+      <div className="carousel-center-overlay">
         <span>{current.name}</span>
         <button
           onClick={(event) => {
             event.stopPropagation();
-            onAdd();
+            onAdd(safe);
           }}
         >
           <Check />
           Fijar
         </button>
       </div>
-      <button
-        className="carousel-side next"
-        onClick={() => {
-          if (suppressClick.current) {
-            suppressClick.current = false;
-            return;
-          }
-          onIndex(safe + 1);
-        }}
-        aria-label={`Siguiente: ${next.name}`}
-      >
-        <img src={`/api/media/${next.mediaId}`} alt="" />
-      </button>
     </section>
   );
 }
@@ -396,6 +401,7 @@ export default function OutfitBuilder({
   poses,
   garments,
   outfit,
+  aiTryOnEnabled,
 }: OutfitBuilderData) {
   const router = useRouter();
   const [poseId, setPoseId] = useState(outfit?.poseId || poses[0]?.id || "");
@@ -417,6 +423,7 @@ export default function OutfitBuilder({
   const [query, setQuery] = useState("");
   const [indices, setIndices] = useState<Record<string, number>>({});
   const [swipes, setSwipes] = useState<Record<string, number>>({});
+  const [motionIndices, setMotionIndices] = useState<Record<string, number>>({});
   const [exporting, setExporting] = useState(false);
   const [stageReady, setStageReady] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
@@ -439,7 +446,7 @@ export default function OutfitBuilder({
     : zones.flatMap((zone) => {
         const choices = byZone[zone];
         if (!choices.length) return [];
-        const index = wrapCarouselIndex(indices[zone] || 0, choices.length);
+        const index = wrapCarouselIndex(motionIndices[zone] ?? indices[zone] ?? 0, choices.length);
         const garment = choices[index];
         return [
           {
@@ -466,10 +473,10 @@ export default function OutfitBuilder({
         [zone]: wrapCarouselIndex(next, length),
       }));
   }
-  function addZone(zone: string) {
+  function addZone(zone: string, activeIndex?: number) {
     const choices = byZone[zone];
     if (!choices.length) return;
-    const index = wrapCarouselIndex(indices[zone] || 0, choices.length);
+    const index = wrapCarouselIndex(activeIndex ?? indices[zone] ?? 0, choices.length);
     const garment = choices[index];
     const item = {
       ...placementFor(garment, poseId),
@@ -535,12 +542,8 @@ export default function OutfitBuilder({
     setItems(normalizeLayers(sorted));
   }
   async function save() {
-    if (!name.trim() || !pose || !stageRef.current || !stageReady)
-      return alert(
-        stageReady
-          ? "Ponle un nombre al conjunto"
-          : "Espera a que termine de cargar la pose",
-      );
+    if (!pose || !stageRef.current || !stageReady)
+      return alert("Espera a que termine de cargar la pose");
     setBusy(true);
     setSelected(null);
     setExporting(true);
@@ -551,7 +554,7 @@ export default function OutfitBuilder({
       )
     ).blob();
     const data = {
-      name: name.trim(),
+      name: name.trim() || defaultOutfitName(),
       notes,
       poseId,
       items: normalizeLayers(items).map(
@@ -665,6 +668,7 @@ export default function OutfitBuilder({
           maxLength={80}
         />
         <div className="toolbar">
+          <AiTryOnButton outfitId={outfit?.id} enabled={aiTryOnEnabled} compact/>
           <button
             className="icon-btn"
             title="Datos"
@@ -716,10 +720,11 @@ export default function OutfitBuilder({
               index={indices[zone] || 0}
               top={bandTops[zone]}
               onIndex={(index) => setZoneIndex(zone, index)}
-              onAdd={() => addZone(zone)}
-              onSwipe={(pixels) =>
-                setSwipes((old) => ({ ...old, [zone]: pixels }))
-              }
+              onAdd={(index) => addZone(zone, index)}
+              onMotion={(index, pixels) => {
+                setMotionIndices((old) => ({ ...old, [zone]: index }));
+                setSwipes((old) => ({ ...old, [zone]: Math.max(-150, Math.min(150, pixels)) }));
+              }}
             />
           ))}
         </div>

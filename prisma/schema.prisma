@@ -26,6 +26,13 @@ enum CalendarEntryType {
   WORN
 }
 
+enum AiTryOnJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model User {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -37,6 +44,7 @@ model User {
   outfits      Outfit[]
   media        Media[]
   calendarEntries OutfitCalendarEntry[]
+  aiTryOnJobs AiTryOnJob[]
 }
 
 model Session {
@@ -64,6 +72,8 @@ model Media {
   garmentProcessed Garment[] @relation("GarmentProcessed")
   garmentThumbnail Garment[] @relation("GarmentThumbnail")
   outfitPreview Outfit[] @relation("OutfitPreview")
+  outfitRealPhoto Outfit[] @relation("OutfitRealPhoto")
+  aiTryOnResult AiTryOnJob[] @relation("AiTryOnResult")
 }
 
 model Pose {
@@ -133,14 +143,37 @@ model Outfit {
   owner          User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name           String
   notes          String?
-  poseId         String
-  pose           Pose        @relation(fields: [poseId], references: [id], onDelete: Restrict)
+  poseId         String?
+  pose           Pose?       @relation(fields: [poseId], references: [id], onDelete: Restrict)
   previewMediaId String?
   previewMedia   Media?      @relation("OutfitPreview", fields: [previewMediaId], references: [id])
+  realPhotoMediaId String?
+  realPhotoMedia Media?      @relation("OutfitRealPhoto", fields: [realPhotoMediaId], references: [id])
   items          OutfitItem[]
   calendarEntries OutfitCalendarEntry[]
+  aiTryOnJobs    AiTryOnJob[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+}
+
+model AiTryOnJob {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outfitId       String
+  outfit         Outfit           @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  status         AiTryOnJobStatus @default(QUEUED)
+  provider       String
+  providerJobId  String?
+  inputHash      String
+  resultMediaId  String?
+  resultMedia    Media?           @relation("AiTryOnResult", fields: [resultMediaId], references: [id])
+  error          String?
+  createdAt      DateTime         @default(now())
+  completedAt    DateTime?
+
+  @@index([userId, inputHash, status])
+  @@index([outfitId, createdAt])
 }
 
 model OutfitCalendarEntry {

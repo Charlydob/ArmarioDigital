@@ -238,8 +238,9 @@ export default function GarmentDetailEditor({
             />
           </div>
         </section>
-        <section className="card card-body garment-form">
-          <h2>Información</h2>
+        <details className="card compact-disclosure garment-form" open>
+          <summary>Datos</summary>
+          <div className="disclosure-body">
           <div className="form-grid fields">
             <label className="label">
               Nombre
@@ -315,7 +316,8 @@ export default function GarmentDetailEditor({
               onChange={(e) => setData({ ...data, notes: e.target.value })}
             />
           </label>
-        </section>
+          </div>
+        </details>
       </div>
       {editorFile && (
         <div className="editor-modal">
@@ -338,7 +340,9 @@ export default function GarmentDetailEditor({
           </section>
         </div>
       )}
-      <section className="card card-body placement-section">
+      <details className="card compact-disclosure placement-section">
+        <summary>Poses y placement</summary>
+        <div className="disclosure-body">
         <div className="section-head">
           <div>
             <h2>Poses compatibles</h2>
@@ -433,9 +437,12 @@ export default function GarmentDetailEditor({
             </div>
           </div>
         )}
-      </section>
+        </div>
+      </details>
       {outfits.length > 0 && (
-        <section>
+        <details className="card compact-disclosure">
+          <summary>Uso en conjuntos</summary>
+          <div className="disclosure-body">
           <div className="section-head">
             <h2>Usada en conjuntos</h2>
           </div>
@@ -453,7 +460,8 @@ export default function GarmentDetailEditor({
               </Link>
             ))}
           </div>
-        </section>
+          </div>
+        </details>
       )}
       <div className="sticky-save">
         <button

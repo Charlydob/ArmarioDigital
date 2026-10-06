@@ -4,7 +4,7 @@ import { Copy, Edit3, Ellipsis, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export default function OutfitActions({ id }: { id: string }) {
+export default function OutfitActions({ id, editable = true }: { id: string; editable?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -34,10 +34,10 @@ export default function OutfitActions({ id }: { id: string }) {
   return (
     <>
       <div className="toolbar">
-        <Link className="btn btn-primary" href={`/probar?edit=${id}`}>
+        {editable && <Link className="btn btn-primary" href={`/probar?edit=${id}`}>
           <Edit3 size={16} />
           Editar
-        </Link>
+        </Link>}
         <div className="menu-wrap">
           <button className="icon-btn" onClick={() => setMenu(!menu)}>
             <Ellipsis />

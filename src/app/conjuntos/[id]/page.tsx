@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import OutfitActions from "@/components/OutfitActions";
+import OutfitMediaPanel from "@/components/OutfitMediaPanel";
+import AiTryOnButton from "@/components/AiTryOnButton";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { zoneLabels } from "@/lib/labels";
@@ -24,6 +26,7 @@ export default async function OutfitDetail({
     where: { id, ownerId: user.id },
     include: {
       previewMedia: true,
+      realPhotoMedia: true,
       pose: true,
       items: {
         include: {
@@ -44,22 +47,13 @@ export default async function OutfitDetail({
           <div className="eyebrow">Ficha de estilismo</div>
           <h1>{outfit.name}</h1>
           <p className="subtle">
-            {outfit.pose.name} · {outfit.items.length} prendas
+            {outfit.pose?.name || "Foto real"} · {outfit.items.length} prendas
           </p>
         </div>
-        <OutfitActions id={outfit.id} />
+        <OutfitActions id={outfit.id} editable={Boolean(outfit.poseId)} />
       </header>
       <section className="outfit-spatial">
-        <div className="detail-preview card">
-          {outfit.previewMedia ? (
-            <img
-              src={`/api/media/${outfit.previewMedia.id}`}
-              alt={outfit.name}
-            />
-          ) : (
-            <div className="empty">Sin vista previa</div>
-          )}
-        </div>
+        <OutfitMediaPanel id={outfit.id} name={outfit.name} virtualMediaId={outfit.previewMedia?.id || null} realPhotoMediaId={outfit.realPhotoMedia?.id || null}/>
         <div className="spatial-items">
           {items.map((item, index) => (
             <Link
@@ -79,6 +73,7 @@ export default async function OutfitDetail({
           ))}
         </div>
       </section>
+      <AiTryOnButton outfitId={outfit.id} enabled={process.env.AI_TRYON_ENABLED === "true"}/>
       <div className="section-head">
         <h2>Prendas del conjunto</h2>
       </div>

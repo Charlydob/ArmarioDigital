@@ -24,12 +24,13 @@ export default async function TryPage({
     }),
     edit
       ? db.outfit.findFirst({
-          where: { id: edit, ownerId: user.id },
+          where: { id: edit, ownerId: user.id, poseId: { not: null } },
           include: { items: true },
         })
       : null,
   ]);
   const data = {
+    aiTryOnEnabled: process.env.AI_TRYON_ENABLED === "true",
     poses: poses.map((p) => ({
       id: p.id,
       name: p.name,
@@ -52,7 +53,7 @@ export default async function TryPage({
           id: outfit.id,
           name: outfit.name,
           notes: outfit.notes || "",
-          poseId: outfit.poseId,
+          poseId: outfit.poseId!,
           items: outfit.items,
         }
       : null,

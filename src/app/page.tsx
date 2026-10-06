@@ -29,12 +29,12 @@ export default async function HomePage() {
     db.garment.count({ where: { ownerId: user.id, status: "WISHLIST" } }),
     db.outfit.findFirst({
       where: { ownerId: user.id },
-      include: { previewMedia: true, _count: { select: { items: true } } },
+      include: { previewMedia: true, realPhotoMedia: true, _count: { select: { items: true } } },
       orderBy: { updatedAt: "desc" },
     }),
     db.outfitCalendarEntry.findMany({
       where: { userId: user.id, date: { gte: start, lte: end } },
-      include: { outfit: { include: { previewMedia: true } } },
+      include: { outfit: { include: { previewMedia: true, realPhotoMedia: true } } },
     }),
   ]);
   const weekMap = new Map(week.map((entry) => [isoDate(entry.date), entry]));
@@ -104,9 +104,9 @@ export default async function HomePage() {
                 }).format(day)}
               </small>
               <b>{day.getUTCDate()}</b>
-              {entry?.outfit.previewMedia ? (
+              {entry && (entry.outfit.realPhotoMedia || entry.outfit.previewMedia) ? (
                 <img
-                  src={`/api/media/${entry.outfit.previewMedia.id}`}
+                  src={`/api/media/${(entry.outfit.realPhotoMedia || entry.outfit.previewMedia)!.id}`}
                   alt=""
                 />
               ) : (
@@ -126,8 +126,8 @@ export default async function HomePage() {
             </Link>
           </div>
           <Link href={`/conjuntos/${recent.id}`} className="card recent-look">
-            {recent.previewMedia && (
-              <img src={`/api/media/${recent.previewMedia.id}`} alt="" />
+            {(recent.realPhotoMedia || recent.previewMedia) && (
+              <img src={`/api/media/${(recent.realPhotoMedia || recent.previewMedia)!.id}`} alt="" />
             )}
             <div className="card-body">
               <span className="pill">{recent._count.items} prendas</span>

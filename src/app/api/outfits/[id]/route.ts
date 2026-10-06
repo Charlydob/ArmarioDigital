@@ -8,7 +8,7 @@ import { removeMedia, saveImage } from "@/lib/storage";
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const outfit = await db.outfit.findFirst({ where: { id, ownerId: user.id }, include: { previewMedia: true, pose: { include: { normalizedMedia: true } }, items: { include: { garment: { include: { processedMedia: true, thumbnailMedia: true } } }, orderBy: { layerOrder: "asc" } } } });
+  const outfit = await db.outfit.findFirst({ where: { id, ownerId: user.id }, include: { previewMedia: true, realPhotoMedia: true, pose: { include: { normalizedMedia: true } }, items: { include: { garment: { include: { processedMedia: true, thumbnailMedia: true } } }, orderBy: { layerOrder: "asc" } } } });
   return outfit ? NextResponse.json(outfit) : NextResponse.json({ error: "No encontrado" }, { status: 404 });
 }
 
@@ -39,9 +39,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const outfit = await db.outfit.findFirst({ where: { id, ownerId: user.id }, include: { previewMedia: true } });
+  const outfit = await db.outfit.findFirst({ where: { id, ownerId: user.id }, include: { previewMedia: true, realPhotoMedia: true, aiTryOnJobs: { include: { resultMedia: true } } } });
   if (!outfit) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   await db.outfit.delete({ where: { id } });
   if (outfit.previewMedia) { await db.media.delete({ where: { id: outfit.previewMedia.id } }).catch(() => undefined); await removeMedia(outfit.previewMedia.path); }
+  if (outfit.realPhotoMedia) { await db.media.delete({ where: { id: outfit.realPhotoMedia.id } }).catch(() => undefined); await removeMedia(outfit.realPhotoMedia.path); }
+  for (const job of outfit.aiTryOnJobs) if (job.resultMedia) { await db.media.delete({ where: { id: job.resultMedia.id } }).catch(() => undefined); await removeMedia(job.resultMedia.path); }
   return NextResponse.json({ ok: true });
 }

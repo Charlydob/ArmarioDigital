@@ -20,3 +20,9 @@ export const outfitSchema = z.object({
     rotation: z.number().min(-180).max(180), opacity: z.number().min(.05).max(1),
   })).max(100),
 });
+
+export const realPhotoOutfitSchema = z.object({
+  name: z.string().trim().max(80).optional(),
+  notes: z.string().trim().max(1000).optional(),
+  garmentIds: z.array(z.string().min(1)).max(100).default([]),
+});
