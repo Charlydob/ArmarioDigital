@@ -149,6 +149,7 @@ model Outfit {
   previewMedia   Media?      @relation("OutfitPreview", fields: [previewMediaId], references: [id])
   realPhotoMediaId String?
   realPhotoMedia Media?      @relation("OutfitRealPhoto", fields: [realPhotoMediaId], references: [id])
+  preferRealPhoto Boolean    @default(true)
   items          OutfitItem[]
   calendarEntries OutfitCalendarEntry[]
   aiTryOnJobs    AiTryOnJob[]

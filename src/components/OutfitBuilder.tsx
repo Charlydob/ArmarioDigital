@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Image as KImage, Layer, Stage, Transformer } from "react-konva";
@@ -26,6 +25,7 @@ import {
   appendUniqueGarment,
   applyPosePlacements,
   placementRenderSize,
+  resolveFlatPlacement,
   resolveGarmentPlacement,
   serializeOutfitItems,
 } from "@/lib/placement";
@@ -63,11 +63,12 @@ export type OutfitBuilderData = {
   poses: Pose[];
   garments: Garment[];
   aiTryOnEnabled: boolean;
+  startWithoutPose?: boolean;
   outfit: null | {
     id: string;
     name: string;
     notes: string;
-    poseId: string;
+    poseId: string | null;
     items: Array<Omit<Item, "instanceId" | "poseId"> & { id: string }>;
   };
 };
@@ -131,7 +132,9 @@ function useAsset(src?: string) {
 }
 
 function placementFor(garment: Garment, poseId: string, anchors: PoseAnchors): Item {
-  const placement = resolveGarmentPlacement(garment, poseId, anchors);
+  const placement = poseId
+    ? resolveGarmentPlacement(garment, poseId, anchors)
+    : resolveFlatPlacement(garment);
   return {
     garmentId: garment.id,
     zone: garment.zone,
@@ -237,7 +240,7 @@ function BuilderStage({
   stageRef,
   setReady,
 }: {
-  pose: Pose;
+  pose?: Pose;
   items: Item[];
   garments: Garment[];
   previews: Preview[];
@@ -249,8 +252,8 @@ function BuilderStage({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
-  const person = useAsset(`/api/media/${pose.mediaId}`);
-  useEffect(() => setReady(Boolean(person)), [person, setReady]);
+  const person = useAsset(pose ? `/api/media/${pose.mediaId}` : undefined);
+  useEffect(() => setReady(!pose || Boolean(person)), [person, pose, setReady]);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -262,12 +265,12 @@ function BuilderStage({
   }, []);
   const ratio = width / 900;
   return (
-    <div className="try-canvas" ref={container}>
-      <img
+    <div className={`try-canvas ${pose ? "with-pose" : "flat-outfit"}`} ref={container}>
+      {pose ? <img
         className="pose-fallback"
         src={`/api/media/${pose.mediaId}`}
         alt={pose.name}
-      />
+      /> : <span className="flat-outfit-label">Composición sin pose</span>}
       <Stage
         ref={stageRef}
         width={width}
@@ -343,7 +346,7 @@ function CarouselBand({
     dragFree: false,
     containScroll: "trimSnaps",
     skipSnaps: true,
-    duration: 20,
+    duration: 16,
   });
   const [visualIndex, setVisualIndex] = useState(index);
   const onIndexRef = useRef(onIndex);
@@ -466,14 +469,17 @@ export default function OutfitBuilder({
   garments,
   outfit,
   aiTryOnEnabled,
+  startWithoutPose = false,
 }: OutfitBuilderData) {
   const router = useRouter();
-  const [poseId, setPoseId] = useState(outfit?.poseId || poses[0]?.id || "");
+  const [poseId, setPoseId] = useState(
+    outfit ? outfit.poseId || "" : startWithoutPose ? "" : poses[0]?.id || "",
+  );
   const [items, setItems] = useState<Item[]>(
     () =>
       outfit?.items.map((item) => ({
         ...item,
-        poseId: outfit.poseId,
+        poseId: outfit.poseId || "",
         instanceId: item.id,
       })) || [],
   );
@@ -615,8 +621,8 @@ export default function OutfitBuilder({
     setItems(normalizeLayers(sorted));
   }
   async function save() {
-    if (!pose || !stageRef.current || !stageReady)
-      return alert("Espera a que termine de cargar la pose");
+    if (!stageRef.current || !stageReady)
+      return alert("Espera a que termine de cargar la composición");
     setBusy(true);
     setSelected(null);
     setExporting(true);
@@ -629,7 +635,7 @@ export default function OutfitBuilder({
     const data = {
       name: name.trim() || defaultOutfitName(),
       notes,
-      poseId,
+      poseId: poseId || null,
       items: serializeOutfitItems(items),
     };
     const fd = new FormData();
@@ -651,16 +657,6 @@ export default function OutfitBuilder({
     router.push(`/conjuntos/${saved.id}`);
     router.refresh();
   }
-  if (!poses.length)
-    return (
-      <div className="empty">
-        <h2>Primero necesitas una pose</h2>
-        <p>Sube, recorta y alinea una foto de cuerpo entero.</p>
-        <Link className="btn btn-primary" href="/poses/nueva">
-          Crear pose
-        </Link>
-      </div>
-    );
   const bandTops: Record<string, number> = carouselBandPositions(anchors);
   return (
     <div className="try-studio real-carousel">
@@ -671,6 +667,7 @@ export default function OutfitBuilder({
             value={poseId}
             onChange={(event) => changePose(event.target.value)}
           >
+            <option value="">Sin pose · composición flotante</option>
             {poses.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
@@ -747,8 +744,7 @@ export default function OutfitBuilder({
         </div>
       </div>
       <div className="try-space">
-        {pose && (
-          <BuilderStage
+        <BuilderStage
             pose={pose}
             items={items}
             garments={garments}
@@ -762,7 +758,6 @@ export default function OutfitBuilder({
             stageRef={stageRef}
             setReady={setStageReady}
           />
-        )}
         <div className="carousel-bands">
           {zones.map((zone) => (
             <CarouselBand
@@ -775,13 +770,12 @@ export default function OutfitBuilder({
               onAdd={(index) => addZone(zone, index)}
               addedGarmentIds={addedGarmentIds}
               onMotion={(index, pixels) => {
-                setMotions((old) => ({
-                  ...old,
-                  [zone]: {
-                    index,
-                    pixels: Math.max(-150, Math.min(150, pixels)),
-                  },
-                }));
+                const nextPixels = Math.round(Math.max(-150, Math.min(150, pixels)) * 2) / 2;
+                setMotions((old) =>
+                  old[zone]?.index === index && old[zone]?.pixels === nextPixels
+                    ? old
+                    : { ...old, [zone]: { index, pixels: nextPixels } },
+                );
               }}
             />
           ))}

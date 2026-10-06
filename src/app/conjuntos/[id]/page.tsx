@@ -47,13 +47,13 @@ export default async function OutfitDetail({
           <div className="eyebrow">Ficha de estilismo</div>
           <h1>{outfit.name}</h1>
           <p className="subtle">
-            {outfit.pose?.name || "Foto real"} · {outfit.items.length} prendas
+            {outfit.pose?.name || (outfit.previewMedia ? "Composición sin pose" : "Foto real")} · {outfit.items.length} prendas
           </p>
         </div>
-        <OutfitActions id={outfit.id} editable={Boolean(outfit.poseId)} />
+        <OutfitActions id={outfit.id} />
       </header>
       <section className="outfit-spatial">
-        <OutfitMediaPanel id={outfit.id} name={outfit.name} virtualMediaId={outfit.previewMedia?.id || null} realPhotoMediaId={outfit.realPhotoMedia?.id || null}/>
+        <OutfitMediaPanel id={outfit.id} name={outfit.name} virtualMediaId={outfit.previewMedia?.id || null} realPhotoMediaId={outfit.realPhotoMedia?.id || null} preferRealPhoto={outfit.preferRealPhoto}/>
         <div className="spatial-items">
           {items.map((item, index) => (
             <Link

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isoDate, monthGrid, parseCalendarDate } from "./calendar";
+import { entriesByDate, isoDate, monthGrid, parseCalendarDate } from "./calendar";
 
 describe("calendar helpers", () => {
   it("builds a six-week Monday-first month grid", () => {
@@ -13,5 +13,11 @@ describe("calendar helpers", () => {
   it("accepts real ISO dates and rejects rolled dates", () => {
     expect(isoDate(parseCalendarDate("2026-10-05"))).toBe("2026-10-05");
     expect(() => parseCalendarDate("2026-02-30")).toThrow("Fecha no válida");
+  });
+
+  it("exposes an assigned outfit to calendar and weekly consumers", () => {
+    const assignment = { date: "2026-10-06T00:00:00.000Z", outfitId: "look-1", type: "PLANNED" };
+    const indexed = entriesByDate([assignment]);
+    expect(indexed.get("2026-10-06")).toEqual(assignment);
   });
 });

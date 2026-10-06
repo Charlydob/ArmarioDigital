@@ -19,6 +19,8 @@ import { decontaminateAlphaEdges } from "@/lib/alpha";
 
 type Mode = "erase" | "restore" | "polygon" | "pan";
 type Point = { x: number; y: number };
+type Backdrop = "checker" | "light" | "dark" | "vivid";
+type ViewMode = "image" | "mask" | "edges";
 
 export default function BackgroundEditor({
   file,
@@ -37,6 +39,7 @@ export default function BackgroundEditor({
     px: number;
     py: number;
   } | null>(null);
+  const lastPoint = useRef<Point | null>(null);
   const [mode, setMode] = useState<Mode>("polygon");
   const [size, setSize] = useState(28);
   const [drawing, setDrawing] = useState(false);
@@ -45,6 +48,16 @@ export default function BackgroundEditor({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dimensions, setDimensions] = useState({ width: 1, height: 1 });
+  const [backdrop, setBackdrop] = useState<Backdrop>("checker");
+  const [view, setView] = useState<ViewMode>("image");
+
+  function captureRestoreSource(target: HTMLCanvasElement) {
+    const copy = document.createElement("canvas");
+    copy.width = target.width;
+    copy.height = target.height;
+    copy.getContext("2d")!.drawImage(target, 0, 0);
+    original.current = copy;
+  }
 
   useEffect(() => {
     const source = URL.createObjectURL(file);
@@ -57,11 +70,7 @@ export default function BackgroundEditor({
       target
         .getContext("2d")!
         .drawImage(image, 0, 0, target.width, target.height);
-      const copy = document.createElement("canvas");
-      copy.width = target.width;
-      copy.height = target.height;
-      copy.getContext("2d")!.drawImage(target, 0, 0);
-      original.current = copy;
+      captureRestoreSource(target);
       setDimensions({ width: target.width, height: target.height });
     };
     image.src = source;
@@ -101,6 +110,7 @@ export default function BackgroundEditor({
     }
     snapshot();
     setDrawing(true);
+    lastPoint.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     paint(event, true);
   }
@@ -120,22 +130,36 @@ export default function BackgroundEditor({
       radius = (size * target.width) / target.getBoundingClientRect().width;
     if (mode === "erase") {
       context.globalCompositeOperation = "destination-out";
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.lineWidth = radius * 2;
       context.beginPath();
-      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.fill();
+      if (lastPoint.current) context.moveTo(lastPoint.current.x, lastPoint.current.y);
+      else context.moveTo(point.x, point.y);
+      context.lineTo(point.x, point.y);
+      context.stroke();
     } else if (original.current) {
-      context.save();
-      context.beginPath();
-      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.clip();
-      context.globalCompositeOperation = "source-over";
-      context.drawImage(original.current, 0, 0, target.width, target.height);
-      context.restore();
+      const from = lastPoint.current || point;
+      const distance = Math.hypot(point.x - from.x, point.y - from.y);
+      const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius / 2)));
+      for (let step = 0; step <= steps; step += 1) {
+        const x = from.x + ((point.x - from.x) * step) / steps;
+        const y = from.y + ((point.y - from.y) * step) / steps;
+        context.save();
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.clip();
+        context.globalCompositeOperation = "source-over";
+        context.drawImage(original.current, 0, 0, target.width, target.height);
+        context.restore();
+      }
     }
+    lastPoint.current = point;
     context.globalCompositeOperation = "source-over";
   }
   function stop(event?: React.PointerEvent<HTMLCanvasElement>) {
     setDrawing(false);
+    lastPoint.current = null;
     panStart.current = null;
     if (event?.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -216,6 +240,7 @@ export default function BackgroundEditor({
         target
           .getContext("2d")!
           .drawImage(image, 0, 0, target.width, target.height);
+        captureRestoreSource(target);
         setDimensions({ width: target.width, height: target.height });
         history.current = [];
         future.current = [];
@@ -285,6 +310,19 @@ export default function BackgroundEditor({
           Limpiar halo
         </button>
       </div>
+      <div className="mask-inspection-row">
+        <div className="segmented" aria-label="Fondo de inspección">
+          <button className={backdrop === "checker" ? "active" : ""} onClick={() => setBackdrop("checker")}>Transparencia</button>
+          <button className={backdrop === "light" ? "active" : ""} onClick={() => setBackdrop("light")}>Claro</button>
+          <button className={backdrop === "dark" ? "active" : ""} onClick={() => setBackdrop("dark")}>Oscuro</button>
+          <button className={backdrop === "vivid" ? "active" : ""} onClick={() => setBackdrop("vivid")}>Color vivo</button>
+        </div>
+        <div className="segmented" aria-label="Vista de máscara">
+          <button className={view === "image" ? "active" : ""} onClick={() => setView("image")}>Imagen</button>
+          <button className={view === "mask" ? "active" : ""} onClick={() => setView("mask")}>Máscara</button>
+          <button className={view === "edges" ? "active" : ""} onClick={() => setView("edges")}>Bordes</button>
+        </div>
+      </div>
       {mode === "polygon" && (
         <div className="mask-hint">
           <span>Toca puntos alrededor de la figura y cierra la selección.</span>
@@ -319,9 +357,9 @@ export default function BackgroundEditor({
           <b>{size}</b>
         </label>
       )}
-      <div className="mask-viewport">
+      <div className={`mask-viewport bg-${backdrop}`}>
         <div
-          className="mask-surface"
+          className={`mask-surface view-${view}`}
           style={{
             transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
           }}

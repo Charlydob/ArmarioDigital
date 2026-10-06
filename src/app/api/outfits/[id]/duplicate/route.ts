@@ -10,6 +10,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   if (!source) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   const preview = source.previewMedia ? await saveImage(user.id, await readMedia(source.previewMedia.path), source.previewMedia.mime) : null;
   const realPhoto = source.realPhotoMedia ? await saveImage(user.id, await readMedia(source.realPhotoMedia.path), source.realPhotoMedia.mime) : null;
-  const copy = await db.outfit.create({ data: { ownerId: user.id, name: `${source.name} · copia`, notes: source.notes, poseId: source.poseId, previewMediaId: preview?.id, realPhotoMediaId: realPhoto?.id, items: { create: source.items.map(({ garmentId, zone, layerOrder, x, y, scaleX, scaleY, rotation, opacity }) => ({ garmentId, zone, layerOrder, x, y, scaleX, scaleY, rotation, opacity })) } } });
+  const copy = await db.outfit.create({ data: { ownerId: user.id, name: `${source.name} · copia`, notes: source.notes, poseId: source.poseId, previewMediaId: preview?.id, realPhotoMediaId: realPhoto?.id, preferRealPhoto: source.preferRealPhoto, items: { create: source.items.map(({ garmentId, zone, layerOrder, x, y, scaleX, scaleY, rotation, opacity }) => ({ garmentId, zone, layerOrder, x, y, scaleX, scaleY, rotation, opacity })) } } });
   return NextResponse.json(copy, { status: 201 });
 }

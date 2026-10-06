@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Copy, Edit3, Ellipsis, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import OutfitAgendaAction from "./OutfitAgendaAction";
 
 export default function OutfitActions({ id, editable = true }: { id: string; editable?: boolean }) {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function OutfitActions({ id, editable = true }: { id: string; edi
           <Edit3 size={16} />
           Editar
         </Link>}
+        <OutfitAgendaAction outfitId={id} />
         <div className="menu-wrap">
           <button className="icon-btn" onClick={() => setMenu(!menu)}>
             <Ellipsis />

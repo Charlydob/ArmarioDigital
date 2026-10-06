@@ -1,0 +1,1 @@
+ALTER TABLE "Outfit" ADD COLUMN "preferRealPhoto" BOOLEAN NOT NULL DEFAULT true;

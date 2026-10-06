@@ -7,10 +7,10 @@ import { parseAnchors } from "@/lib/labels";
 export default async function TryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string }>;
+  searchParams: Promise<{ edit?: string; mode?: string }>;
 }) {
   const user = await requireUser();
-  const { edit } = await searchParams;
+  const { edit, mode } = await searchParams;
   const [poses, garments, outfit] = await Promise.all([
     db.pose.findMany({
       where: { ownerId: user.id },
@@ -24,13 +24,14 @@ export default async function TryPage({
     }),
     edit
       ? db.outfit.findFirst({
-          where: { id: edit, ownerId: user.id, poseId: { not: null } },
+          where: { id: edit, ownerId: user.id },
           include: { items: true },
         })
       : null,
   ]);
   const data = {
     aiTryOnEnabled: process.env.AI_TRYON_ENABLED === "true",
+    startWithoutPose: mode === "flat",
     poses: poses.map((p) => ({
       id: p.id,
       name: p.name,
@@ -53,7 +54,7 @@ export default async function TryPage({
           id: outfit.id,
           name: outfit.name,
           notes: outfit.notes || "",
-          poseId: outfit.poseId!,
+          poseId: outfit.poseId,
           items: outfit.items,
         }
       : null,

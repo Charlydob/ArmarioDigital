@@ -23,9 +23,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const parsed = outfitSchema.safeParse(payload);
   const preview = form.get("preview");
   if (!parsed.success || !(preview instanceof File)) return NextResponse.json({ error: "Revisa el conjunto" }, { status: 400 });
-  const pose = await db.pose.findFirst({ where: { id: parsed.data.poseId, ownerId: user.id } });
+  const pose = parsed.data.poseId ? await db.pose.findFirst({ where: { id: parsed.data.poseId, ownerId: user.id } }) : null;
   const count = await db.garment.count({ where: { ownerId: user.id, id: { in: parsed.data.items.map((i) => i.garmentId) } } });
-  if (!pose || count !== new Set(parsed.data.items.map((i) => i.garmentId)).size) return NextResponse.json({ error: "Contenido no válido" }, { status: 403 });
+  if ((parsed.data.poseId && !pose) || count !== new Set(parsed.data.items.map((i) => i.garmentId)).size) return NextResponse.json({ error: "Contenido no válido" }, { status: 403 });
   const media = await saveImage(user.id, preview);
   const data = parsed.data;
   const outfit = await db.$transaction(async (tx) => {

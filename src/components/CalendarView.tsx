@@ -14,7 +14,7 @@ type Entry = {
   outfit: OutfitOption;
 };
 
-export default function CalendarView({ outfits }: { outfits: OutfitOption[] }) {
+export default function CalendarView({ outfits, initialDate = "" }: { outfits: OutfitOption[]; initialDate?: string }) {
   const today = new Date();
   const [cursor, setCursor] = useState(
     new Date(Date.UTC(today.getFullYear(), today.getMonth(), 1)),
@@ -53,6 +53,11 @@ export default function CalendarView({ outfits }: { outfits: OutfitOption[] }) {
       active = false;
     };
   }, [rangeStart, rangeEnd]);
+  useEffect(() => {
+    if (initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate)) open(initialDate);
+    // Initial deep-link only; subsequent selection is controlled locally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDate]);
 
   function open(date: string) {
     const entry = byDate.get(date);
@@ -201,13 +206,13 @@ export default function CalendarView({ outfits }: { outfits: OutfitOption[] }) {
                     className={type === "PLANNED" ? "active" : ""}
                     onClick={() => setType("PLANNED")}
                   >
-                    Planeado
+                    Planificado
                   </button>
                   <button
                     className={type === "WORN" ? "active" : ""}
                     onClick={() => setType("WORN")}
                   >
-                    Llevado
+                    Usado
                   </button>
                 </div>
                 <label className="label">

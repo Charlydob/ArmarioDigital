@@ -13,7 +13,7 @@ export const garmentSchema = z.object({
 export const outfitSchema = z.object({
   name: z.string().trim().min(1).max(80),
   notes: z.string().trim().max(1000).optional(),
-  poseId: z.string().min(1),
+  poseId: z.string().min(1).nullable(),
   items: z.array(z.object({
     garmentId: z.string().min(1), zone: z.enum(zones), layerOrder: z.number().int().min(0),
     x: z.number().finite(), y: z.number().finite(), scaleX: z.number().min(.05).max(8), scaleY: z.number().min(.05).max(8),

@@ -3,6 +3,7 @@ import {
   appendUniqueGarment,
   applyPosePlacements,
   placementRenderSize,
+  resolveFlatPlacement,
   resolveGarmentPlacement,
   serializeOutfitItems,
 } from "./placement";
@@ -44,6 +45,16 @@ describe("garment placement", () => {
   it("switching pose applies the placement saved for the new pose", () => {
     const item = { garmentId: "coat", zone: "TORSO", layerOrder: 0, instanceId: "one", ...garment.placements[0] };
     expect(applyPosePlacements([item], [garment], "side", anchors)[0]).toMatchObject(garment.placements[1]);
+  });
+
+  it("uses an editorial zone layout when the outfit has no pose", () => {
+    expect(resolveFlatPlacement({ id: "pants", zone: "LEGS" })).toMatchObject({
+      poseId: "",
+      x: 450,
+      y: 720,
+      scaleX: 0.32,
+      scaleY: 0.32,
+    });
   });
 
   it("serialization preserves transforms and layer order across reload", () => {

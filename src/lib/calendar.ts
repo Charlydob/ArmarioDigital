@@ -21,3 +21,7 @@ export function monthGrid(year: number, month: number) {
     return date;
   });
 }
+
+export function entriesByDate<T extends { date: Date | string }>(entries: T[]) {
+  return new Map(entries.map((entry) => [isoDate(typeof entry.date === "string" ? new Date(entry.date) : entry.date), entry]));
+}

@@ -93,7 +93,7 @@ export default async function HomePage() {
           const entry = weekMap.get(isoDate(day));
           return (
             <Link
-              href="/calendario"
+              href={entry ? `/conjuntos/${entry.outfitId}` : `/calendario?date=${isoDate(day)}`}
               key={isoDate(day)}
               className={`week-day ${isoDate(day) === isoDate(today) ? "today" : ""}`}
             >
@@ -106,7 +106,7 @@ export default async function HomePage() {
               <b>{day.getUTCDate()}</b>
               {entry && (entry.outfit.realPhotoMedia || entry.outfit.previewMedia) ? (
                 <img
-                  src={`/api/media/${(entry.outfit.realPhotoMedia || entry.outfit.previewMedia)!.id}`}
+                  src={`/api/media/${(entry.outfit.preferRealPhoto ? entry.outfit.realPhotoMedia || entry.outfit.previewMedia : entry.outfit.previewMedia || entry.outfit.realPhotoMedia)!.id}`}
                   alt=""
                 />
               ) : (
@@ -127,7 +127,7 @@ export default async function HomePage() {
           </div>
           <Link href={`/conjuntos/${recent.id}`} className="card recent-look">
             {(recent.realPhotoMedia || recent.previewMedia) && (
-              <img src={`/api/media/${(recent.realPhotoMedia || recent.previewMedia)!.id}`} alt="" />
+              <img src={`/api/media/${(recent.preferRealPhoto ? recent.realPhotoMedia || recent.previewMedia : recent.previewMedia || recent.realPhotoMedia)!.id}`} alt="" />
             )}
             <div className="card-body">
               <span className="pill">{recent._count.items} prendas</span>

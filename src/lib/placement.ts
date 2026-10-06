@@ -56,6 +56,27 @@ export function resolveGarmentPlacement(
   };
 }
 
+const flatLayout: Record<string, { x: number; y: number; scale: number }> = {
+  HEAD: { x: 220, y: 150, scale: 0.2 },
+  TORSO: { x: 450, y: 330, scale: 0.34 },
+  LEGS: { x: 450, y: 720, scale: 0.32 },
+  FEET: { x: 450, y: 1060, scale: 0.25 },
+  ACCESSORY: { x: 700, y: 250, scale: 0.2 },
+};
+
+export function resolveFlatPlacement(garment: Pick<PlacementGarment, "id" | "zone">) {
+  const layout = flatLayout[garment.zone] ?? flatLayout.ACCESSORY;
+  return {
+    poseId: "",
+    x: layout.x,
+    y: layout.y,
+    scaleX: layout.scale,
+    scaleY: layout.scale,
+    rotation: 0,
+    opacity: 1,
+  } satisfies PlacementTransform;
+}
+
 export function placementRenderSize(
   sourceWidth: number,
   sourceHeight: number,
@@ -88,7 +109,12 @@ export function applyPosePlacements<
   return items.map((item) => {
     const garment = garments.find((candidate) => candidate.id === item.garmentId);
     if (!garment) return { ...item, poseId };
-    return { ...item, ...resolveGarmentPlacement(garment, poseId, anchors) };
+    return {
+      ...item,
+      ...(poseId
+        ? resolveGarmentPlacement(garment, poseId, anchors)
+        : resolveFlatPlacement(garment)),
+    };
   });
 }
 

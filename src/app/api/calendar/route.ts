@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     },
     orderBy: { date: "asc" },
   });
-  return NextResponse.json(entries.map((entry) => ({ ...entry, outfit: { ...entry.outfit, previewMedia: entry.outfit.realPhotoMedia || entry.outfit.previewMedia } })));
+  return NextResponse.json(entries.map((entry) => ({ ...entry, outfit: { ...entry.outfit, previewMedia: entry.outfit.preferRealPhoto ? entry.outfit.realPhotoMedia || entry.outfit.previewMedia : entry.outfit.previewMedia || entry.outfit.realPhotoMedia } })));
 }
 
 export async function POST(request: Request) {
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     },
     include: { outfit: { include: { previewMedia: true, realPhotoMedia: true } } },
   });
-  return NextResponse.json({ ...entry, outfit: { ...entry.outfit, previewMedia: entry.outfit.realPhotoMedia || entry.outfit.previewMedia } });
+  return NextResponse.json({ ...entry, outfit: { ...entry.outfit, previewMedia: entry.outfit.preferRealPhoto ? entry.outfit.realPhotoMedia || entry.outfit.previewMedia : entry.outfit.previewMedia || entry.outfit.realPhotoMedia } });
 }
 
 export async function DELETE(request: Request) {
