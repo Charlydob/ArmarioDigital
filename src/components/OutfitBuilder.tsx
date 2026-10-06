@@ -349,6 +349,8 @@ function CarouselBand({
   const onIndexRef = useRef(onIndex);
   const onMotionRef = useRef(onMotion);
   const frameRef = useRef<number | null>(null);
+  const draggingRef = useRef(false);
+  const targetIndexRef = useRef<number | null>(null);
   useEffect(() => {
     onIndexRef.current = onIndex;
     onMotionRef.current = onMotion;
@@ -360,7 +362,7 @@ function CarouselBand({
   }, [api, index, garments.length]);
   useEffect(() => {
     if (!api) return;
-    const measure = () => {
+    const measure = (targetIndex: number | null = null) => {
       const root = api.rootNode();
       const center = root.getBoundingClientRect().left + root.clientWidth / 2;
       const slides = api.slideNodes();
@@ -369,13 +371,14 @@ function CarouselBand({
       slides.forEach((slide, slideIndex) => {
         const rect = slide.getBoundingClientRect();
         const delta = rect.left + rect.width / 2 - center;
+        if (targetIndex !== null && slideIndex !== targetIndex) return;
         if (Math.abs(delta) < Math.abs(offset)) { nearest = slideIndex; offset = delta; }
       });
       return { index: nearest, offset };
     };
     const report = () => {
       frameRef.current = null;
-      const measured = measure();
+      const measured = measure(targetIndexRef.current);
       setVisualIndex(measured.index);
       onMotionRef.current(measured.index, measured.offset);
       return measured;
@@ -384,22 +387,45 @@ function CarouselBand({
       if (frameRef.current === null)
         frameRef.current = requestAnimationFrame(report);
     };
+    const lockSelection = () => {
+      targetIndexRef.current = api.selectedScrollSnap();
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+      report();
+    };
+    const pointerDown = () => {
+      draggingRef.current = true;
+      targetIndexRef.current = null;
+    };
+    const pointerUp = () => {
+      draggingRef.current = false;
+      lockSelection();
+    };
+    const select = () => {
+      if (draggingRef.current) scheduleReport();
+      else lockSelection();
+    };
     const settle = () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
-      const measured = measure();
-      setVisualIndex(measured.index);
-      onIndexRef.current(measured.index);
-      onMotionRef.current(measured.index, 0);
+      const selected = api.selectedScrollSnap();
+      targetIndexRef.current = selected;
+      setVisualIndex(selected);
+      onIndexRef.current(selected);
+      onMotionRef.current(selected, 0);
     };
+    api.on("pointerDown", pointerDown);
+    api.on("pointerUp", pointerUp);
     api.on("scroll", scheduleReport);
-    api.on("select", scheduleReport);
+    api.on("select", select);
     api.on("settle", settle);
     report();
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      api.off("pointerDown", pointerDown);
+      api.off("pointerUp", pointerUp);
       api.off("scroll", scheduleReport);
-      api.off("select", scheduleReport);
+      api.off("select", select);
       api.off("settle", settle);
     };
   }, [api]);
