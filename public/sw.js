@@ -1,4 +1,4 @@
-const CACHE = "armario-static-v2";
+const CACHE = "armario-static-v3";
 const STATIC_PATHS = ["/manifest.webmanifest", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {

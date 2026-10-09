@@ -5,14 +5,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
-    "postbuild": "node scripts/prepare-standalone.mjs",
+    "postbuild": "node scripts/assert-production-routes.mjs --built && node scripts/prepare-standalone.mjs",
     "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:mobile": "node scripts/run-mobile-tests.mjs",
+    "prebuild": "node scripts/assert-production-routes.mjs"
   },
   "dependencies": {
     "@img/sharp-libvips-linux-x64": "1.3.4",
@@ -20,8 +22,8 @@
     "@imgly/background-removal": "^1.7.0",
     "@prisma/client": "6.12.0",
     "bcryptjs": "^3.0.2",
-    "embla-carousel-react": "^8.6.0",
     "jose": "^6.1.0",
+    "keen-slider": "^6.8.6",
     "konva": "^9.3.22",
     "lucide-react": "^0.544.0",
     "next": "16.3.8",
@@ -32,6 +34,7 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@types/node": "^22.18.6",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",

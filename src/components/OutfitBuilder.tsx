@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Image as KImage, Layer, Stage, Transformer } from "react-konva";
 import Konva from "konva";
-import useEmblaCarousel from "embla-carousel-react";
+import { useKeenSlider } from "keen-slider/react";
+import "keen-slider/keen-slider.min.css";
+import FavoriteButton from "./FavoriteButton";
 import {
   ArrowDown,
   ArrowUp,
@@ -18,8 +20,8 @@ import {
   X,
 } from "lucide-react";
 import { moveLayer, normalizeLayers } from "@/lib/editor";
-import { defaultAnchors, type PoseAnchors, zoneLabels } from "@/lib/labels";
-import { carouselBandPositions, carouselItemAt, wrapCarouselIndex } from "@/lib/outfitCarousel";
+import { defaultAnchors, type PoseAnchors, zoneLabels, subtypeLabels } from "@/lib/labels";
+import { carouselBandPositions, wrapCarouselIndex } from "@/lib/outfitCarousel";
 import { defaultOutfitName } from "@/lib/outfitName";
 import {
   appendUniqueGarment,
@@ -40,8 +42,9 @@ type Placement = {
   rotation: number;
   opacity: number;
 };
-type Pose = { id: string; name: string; mediaId: string; anchors: PoseAnchors };
+type Pose = { favorite: boolean; id: string; name: string; mediaId: string; anchors: PoseAnchors };
 type Garment = {
+  favorite: boolean;
   id: string;
   name: string;
   brand: string | null;
@@ -60,6 +63,7 @@ type Item = Placement & {
 };
 type Preview = { garment: Garment; item: Item; shift: number };
 export type OutfitBuilderData = {
+  userId: string;
   poses: Pose[];
   garments: Garment[];
   aiTryOnEnabled: boolean;
@@ -92,9 +96,9 @@ function loadAsset(src: string) {
         new Promise<HTMLImageElement>((resolve, reject) => {
           const objectUrl = URL.createObjectURL(blob);
           const image = new Image();
-          image.onload = () => {
-            entry.image = image;
-            resolve(image);
+          image.onload = async () => {
+            try { await image.decode(); entry.image = image; resolve(image); }
+            catch { URL.revokeObjectURL(objectUrl); reject(new Error("Imagen no válida")); }
           };
           image.onerror = () => {
             URL.revokeObjectURL(objectUrl);
@@ -239,6 +243,7 @@ function BuilderStage({
   setItems,
   stageRef,
   setReady,
+  onFrame,
 }: {
   pose?: Pose;
   items: Item[];
@@ -249,6 +254,7 @@ function BuilderStage({
   setItems: React.Dispatch<React.SetStateAction<Item[]>>;
   stageRef: React.RefObject<Konva.Stage | null>;
   setReady: (ready: boolean) => void;
+  onFrame: (frame: { width: number; height: number; top: number; left: number }) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
@@ -257,12 +263,18 @@ function BuilderStage({
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const resize = new ResizeObserver(() =>
-      setWidth(Math.min(570, element.clientWidth, element.clientHeight * 0.75)),
-    );
+    const resize = new ResizeObserver(() => {
+      const nextWidth = Math.min(570, element.clientWidth, element.clientHeight * 0.75);
+      setWidth(nextWidth);
+      onFrame({ width: nextWidth, height: nextWidth * 4 / 3, top: (element.clientHeight - nextWidth * 4 / 3) / 2, left: (element.clientWidth - nextWidth) / 2 });
+    });
     resize.observe(element);
     return () => resize.disconnect();
-  }, []);
+  }, [onFrame]);
+  useLayoutEffect(() => {
+    const element = container.current;
+    if (element) onFrame({ width, height: width * 4 / 3, top: (element.clientHeight - width * 4 / 3) / 2, left: (element.clientWidth - width) / 2 });
+  }, [width, onFrame]);
   const ratio = width / 900;
   return (
     <div className={`try-canvas ${pose ? "with-pose" : "flat-outfit"}`} ref={container}>
@@ -321,157 +333,114 @@ function BuilderStage({
   );
 }
 
-function CarouselBand({
-  zone,
-  garments,
-  index,
-  top,
-  onIndex,
-  onAdd,
-  onMotion,
-  addedGarmentIds,
+type Frame = { width: number; height: number; top: number; left: number };
+
+// The slider owns physical motion. React only observes a crossed snap, never pixels.
+function CarouselBand({ zone, garments, index, top, onIndex, onAdd, addedGarmentIds,
+  poseId, anchors, frame, panel, onFavorite, assets,
 }: {
-  zone: string;
-  garments: Garment[];
-  index: number;
-  top: number;
-  onIndex: (index: number) => void;
-  onAdd: (index: number) => void;
-  onMotion: (index: number, pixels: number) => void;
-  addedGarmentIds: Set<string>;
+  zone: string; garments: Garment[]; index: number; top: number;
+  onIndex: (index: number) => void; onAdd: (index: number) => void;
+  addedGarmentIds: Set<string>; poseId: string; anchors: PoseAnchors; frame: Frame;
+  panel: boolean; onFavorite: (id: string, value: boolean) => void;
+  assets: Map<string, HTMLImageElement>;
 }) {
-  const [viewportRef, api] = useEmblaCarousel({
-    align: "center",
-    loop: garments.length > 2,
-    dragFree: false,
-    containScroll: "trimSnaps",
-    skipSnaps: true,
-    duration: 16,
-  });
   const [visualIndex, setVisualIndex] = useState(index);
-  const onIndexRef = useRef(onIndex);
-  const onMotionRef = useRef(onMotion);
-  const frameRef = useRef<number | null>(null);
-  const draggingRef = useRef(false);
-  const targetIndexRef = useRef<number | null>(null);
+  const callbacks = useRef({ onIndex, onAdd });
+  useLayoutEffect(() => { callbacks.current = { onIndex, onAdd }; }, [onIndex, onAdd]);
+  const currentIndex = useRef(index);
+  const [sliderRef, slider] = useKeenSlider<HTMLDivElement>({
+    mode: "free-snap", rubberband: false, loop: false, renderMode: "performance",
+    initial: 0, slides: { perView: panel ? 1.7 : 1.5, origin: "center", spacing: 0 },
+    slideChanged(api) {
+      const next = api.track.details.rel;
+      currentIndex.current = next;
+      setVisualIndex(next);
+      callbacks.current.onIndex(next);
+    },
+  });
+  const ids = garments.map(g => g.id).join("|");
   useEffect(() => {
-    onIndexRef.current = onIndex;
-    onMotionRef.current = onMotion;
-  }, [onIndex, onMotion]);
+    // Rebuild when choices or viewport geometry change, never on selection.
+    if (slider.current) slider.current.update({ ...slider.current.options }, Math.max(0, Math.min(index, garments.length - 1)));
+    currentIndex.current = Math.max(0, Math.min(index, garments.length - 1));
+    setVisualIndex(currentIndex.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids, panel, frame.width]);
   useEffect(() => {
-    if (!api) return;
-    const target = wrapCarouselIndex(index, garments.length);
-    if (api.selectedScrollSnap() !== target) api.scrollTo(target);
-  }, [api, index, garments.length]);
-  useEffect(() => {
-    if (!api) return;
-    const measure = (targetIndex: number | null = null) => {
-      const root = api.rootNode();
-      const center = root.getBoundingClientRect().left + root.clientWidth / 2;
-      const slides = api.slideNodes();
-      let nearest = 0;
-      let offset = Number.POSITIVE_INFINITY;
-      slides.forEach((slide, slideIndex) => {
-        const rect = slide.getBoundingClientRect();
-        const delta = rect.left + rect.width / 2 - center;
-        if (targetIndex !== null && slideIndex !== targetIndex) return;
-        if (Math.abs(delta) < Math.abs(offset)) { nearest = slideIndex; offset = delta; }
-      });
-      return { index: nearest, offset };
-    };
-    const report = () => {
-      frameRef.current = null;
-      const measured = measure(targetIndexRef.current);
-      setVisualIndex(measured.index);
-      onMotionRef.current(measured.index, measured.offset);
-      return measured;
-    };
-    const scheduleReport = () => {
-      if (frameRef.current === null)
-        frameRef.current = requestAnimationFrame(report);
-    };
-    const lockSelection = () => {
-      targetIndexRef.current = api.selectedScrollSnap();
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-      report();
-    };
-    const pointerDown = () => {
-      draggingRef.current = true;
-      targetIndexRef.current = null;
-    };
-    const pointerUp = () => {
-      draggingRef.current = false;
-      lockSelection();
-    };
-    const select = () => {
-      if (draggingRef.current) scheduleReport();
-      else lockSelection();
-    };
-    const settle = () => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-      const selected = api.selectedScrollSnap();
-      targetIndexRef.current = selected;
-      setVisualIndex(selected);
-      onIndexRef.current(selected);
-      onMotionRef.current(selected, 0);
-    };
-    api.on("pointerDown", pointerDown);
-    api.on("pointerUp", pointerUp);
-    api.on("scroll", scheduleReport);
-    api.on("select", select);
-    api.on("settle", settle);
-    report();
-    return () => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      api.off("pointerDown", pointerDown);
-      api.off("pointerUp", pointerUp);
-      api.off("scroll", scheduleReport);
-      api.off("select", select);
-      api.off("settle", settle);
-    };
-  }, [api]);
-  if (!garments.length) return null;
-  const safe = wrapCarouselIndex(visualIndex, garments.length);
-  const current = carouselItemAt(garments, safe)!;
-  const alreadyAdded = addedGarmentIds.has(current.id);
-  return (
-    <section
-      className={`body-carousel carousel-${zone.toLowerCase()}`}
-      style={{ top: `${top * 100}%` }}
-    >
-      <span className="carousel-zone">{zoneLabels[zone]}</span>
-      <div className="embla" ref={viewportRef}>
-        <div className="embla-track">
-          {garments.map((garment, slideIndex) => <button type="button" className={`embla-garment ${slideIndex === safe ? "is-active" : ""}`} key={garment.id} onClick={() => api?.scrollTo(slideIndex)} aria-label={garment.name}><img src={`/api/media/${garment.mediaId}`} alt=""/></button>)}
-        </div>
-      </div>
-      <div className="carousel-center-overlay">
-        <span>{current.name}</span>
-        <button
-          disabled={alreadyAdded}
-          onClick={(event) => {
-            event.stopPropagation();
-            onAdd(safe);
-          }}
-        >
-          <Check />
-          {alreadyAdded ? "Ya añadida" : "Fijar"}
-        </button>
-      </div>
-    </section>
-  );
+    if (currentIndex.current !== index) {
+      slider.current?.moveToIdx(index);
+      currentIndex.current = index;
+    }
+  }, [index, slider]);
+  if (!garments.length) return panel ? <section className="panel-empty-zone" data-zone={zone}><span>{zoneLabels[zone]}</span><small>Sin prendas</small></section> : null;
+  const safe = Math.min(visualIndex, garments.length - 1);
+  const current = garments[safe];
+  const ratio = frame.width / 900;
+  return <section className={`selection-band ${panel ? "panel-band" : "body-band"}`} data-zone={zone}
+    style={panel ? undefined : { top: top * frame.height, width: frame.width }}>
+    <div className="band-controls" data-keen-slider-clickable>
+      <span>{zoneLabels[zone]}</span>
+      <FavoriteButton kind="garment" id={current.id} favorite={current.favorite} onChange={value => onFavorite(current.id, value)}/>
+      <button className="pin-button" disabled={addedGarmentIds.has(current.id)} onClick={() => callbacks.current.onAdd(currentIndex.current)}>
+        {addedGarmentIds.has(current.id) ? <Check size={12}/> : "+"} {addedGarmentIds.has(current.id) ? "Añadida" : "Fijar"}
+      </button>
+    </div>
+    <div ref={sliderRef} className="keen-slider garment-slider" aria-label={zoneLabels[zone]}>
+      {garments.map((garment, i) => {
+        const image = assets.get(garment.mediaId)!;
+        const placement = placementFor(garment, poseId, anchors);
+        const size = placementRenderSize(image.naturalWidth, image.naturalHeight, placement);
+        return <div className="keen-slider__slide garment-slide" key={garment.id} data-garment={garment.id}>
+          <button type="button" className="garment-choice" aria-label={garment.name} aria-pressed={i === safe} onClick={() => slider.current?.moveToIdx(i)}>
+            <img src={image.src} alt={garment.name} draggable={false}
+              className={panel ? "panel-png" : "placed-png"}
+              style={panel ? undefined : {
+                width: size.width * ratio, height: size.height * ratio,
+                left: `calc(50% + ${(placement.x - 450) * ratio}px)`,
+                top: (placement.y - top * 1200) * ratio,
+                transform: `translate(-50%, -50%) rotate(${placement.rotation}deg)`,
+                opacity: addedGarmentIds.has(garment.id) ? 0 : placement.opacity,
+              }}/>
+          </button>
+        </div>;
+      })}
+    </div>
+    {panel && <span className="panel-selection-name">{current.name}</span>}
+  </section>;
 }
 
 export default function OutfitBuilder({
+  userId,
   poses,
-  garments,
+  garments: initialGarments,
   outfit,
   aiTryOnEnabled,
   startWithoutPose = false,
 }: OutfitBuilderData) {
   const router = useRouter();
+  const [garments, setGarments] = useState(initialGarments);
+  const [poseFavorites, setPoseFavorites] = useState<Record<string, boolean>>({});
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [favoritesFirst, setFavoritesFirst] = useState(true);
+  const [viewMode, setViewMode] = useState<"body" | "panel">(() => typeof window !== "undefined" && localStorage.getItem(`armario-view-${userId}`) === "panel" ? "panel" : "body");
+  const [assets, setAssets] = useState<Map<string, HTMLImageElement> | null>(null);
+  const [assetError, setAssetError] = useState(false);
+  const [assetAttempt, setAssetAttempt] = useState(0);
+  const [frame, setFrame] = useState<Frame>({ width: 360, height: 480, top: 0, left: 0 });
+  function changeView(mode: "body" | "panel") {
+    setViewMode(mode); localStorage.setItem(`armario-view-${userId}`, mode);
+  }
+  function favoriteGarment(id: string, favorite: boolean) {
+    const garment = garments.find(g => g.id === id);
+    const next = garments.map(g => g.id === id ? { ...g, favorite } : g);
+    if (garment) {
+      const choices = next.filter(g => g.zone === garment.zone && (!onlyFavorites || g.favorite))
+        .sort((a,b) => favoritesFirst ? Number(b.favorite) - Number(a.favorite) : 0);
+      setIndices(old => ({ ...old, [garment.zone]: Math.max(0, choices.findIndex(g => g.id === id)) }));
+    }
+    setGarments(next);
+  }
   const [poseId, setPoseId] = useState(
     outfit ? outfit.poseId || "" : startWithoutPose ? "" : poses[0]?.id || "",
   );
@@ -492,15 +461,15 @@ export default function OutfitBuilder({
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [indices, setIndices] = useState<Record<string, number>>({});
-  const [motions, setMotions] = useState<
-    Record<string, { index: number; pixels: number }>
-  >({});
   const [exporting, setExporting] = useState(false);
   const [stageReady, setStageReady] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
   const draggedLayer = useRef<number | null>(null);
   const pose = poses.find((candidate) => candidate.id === poseId);
   const anchors = pose?.anchors || defaultAnchors;
+  const sortedPoses = [...poses].filter(p => !onlyFavorites || (poseFavorites[p.id] ?? p.favorite) || p.id === poseId)
+    .sort((a,b) => favoritesFirst ? Number(poseFavorites[b.id] ?? b.favorite) - Number(poseFavorites[a.id] ?? a.favorite) : 0);
+
   const active = items.find((item) => item.instanceId === selected);
   const addedGarmentIds = useMemo(
     () => new Set(items.map((item) => item.garmentId)),
@@ -511,40 +480,28 @@ export default function OutfitBuilder({
       Object.fromEntries(
         zones.map((zone) => [
           zone,
-          garments.filter((garment) => garment.zone === zone),
+          garments.filter((garment) => garment.zone === zone && (!onlyFavorites || garment.favorite))
+            .sort((a,b) => favoritesFirst ? Number(b.favorite) - Number(a.favorite) : 0),
         ]),
       ) as Record<string, Garment[]>,
-    [garments],
+    [garments, onlyFavorites, favoritesFirst],
   );
   useEffect(() => {
-    poses.forEach((candidate) =>
-      void loadAsset(`/api/media/${candidate.mediaId}`).catch(() => undefined),
-    );
-    garments.forEach((garment) =>
-      void loadAsset(`/api/media/${garment.mediaId}`).catch(() => undefined),
-    );
-  }, [garments, poses]);
-  const previews = exporting
-    ? []
-    : zones.flatMap((zone) => {
-        const choices = byZone[zone];
-        if (!choices.length) return [];
-        const motion = motions[zone];
-        const index = wrapCarouselIndex(motion?.index ?? indices[zone] ?? 0, choices.length);
-        const garment = choices[index];
-        if (addedGarmentIds.has(garment.id)) return [];
-        return [
-          {
-            garment,
-            item: placementFor(garment, poseId, anchors),
-            shift: motion?.pixels || 0,
-          },
-        ];
-      });
+    let alive = true;
+    Promise.all(initialGarments.map(async g => [g.mediaId, await loadAsset(`/api/media/${g.mediaId}`)] as const))
+      .then(entries => { if (alive) setAssets(new Map(entries)); })
+      .catch(() => { if (alive) setAssetError(true); });
+    return () => { alive = false; };
+  }, [initialGarments, assetAttempt]);
+  const previews = exporting || viewMode !== "panel" || !assets ? [] : zones.flatMap(zone => {
+    const choices = byZone[zone];
+    const garment = choices[wrapCarouselIndex(indices[zone] || 0, choices.length)];
+    return !garment || addedGarmentIds.has(garment.id) ? [] : [{ garment, item: placementFor(garment, poseId, anchors), shift: 0 }];
+  });
   const searchResults = query.trim()
     ? garments
         .filter((garment) =>
-          `${garment.name} ${garment.brand || ""} ${garment.subtype} ${zoneLabels[garment.zone] || ""}`
+          `${garment.name} ${garment.brand || ""} ${garment.subtype} ${subtypeLabels[garment.subtype] || ""} ${zoneLabels[garment.zone] || ""}`
             .toLowerCase()
             .includes(query.toLowerCase()),
         )
@@ -621,7 +578,7 @@ export default function OutfitBuilder({
     setItems(normalizeLayers(sorted));
   }
   async function save() {
-    if (!stageRef.current || !stageReady)
+    if (!stageRef.current || !stageReady || !assets)
       return alert("Espera a que termine de cargar la composición");
     setBusy(true);
     setSelected(null);
@@ -659,7 +616,7 @@ export default function OutfitBuilder({
   }
   const bandTops: Record<string, number> = carouselBandPositions(anchors);
   return (
-    <div className="try-studio real-carousel">
+    <div className={`try-studio real-carousel selection-studio ${viewMode === "panel" ? "panel-mode" : "body-mode"}`}>
       <div className="try-topbar">
         <label className="compact-pose">
           {pose && <img src={`/api/media/${pose.mediaId}`} alt="" />}
@@ -668,12 +625,13 @@ export default function OutfitBuilder({
             onChange={(event) => changePose(event.target.value)}
           >
             <option value="">Sin pose · composición flotante</option>
-            {poses.map((option) => (
+            {sortedPoses.map((option) => (
               <option key={option.id} value={option.id}>
-                {option.name}
+                {(poseFavorites[option.id] ?? option.favorite) ? "♥ " : ""}{option.name}
               </option>
             ))}
           </select>
+          {pose && <FavoriteButton kind="pose" id={pose.id} favorite={poseFavorites[pose.id] ?? pose.favorite} onChange={value => setPoseFavorites(old => ({ ...old, [pose.id]: value }))}/>}
         </label>
         <div className="try-search">
           <Search />
@@ -688,11 +646,10 @@ export default function OutfitBuilder({
                 <button
                   key={garment.id}
                   onClick={() => {
+                    if (onlyFavorites && !garment.favorite) setOnlyFavorites(false);
                     setZoneIndex(
                       garment.zone,
-                      byZone[garment.zone].findIndex(
-                        (candidate) => candidate.id === garment.id,
-                      ),
+                      garments.filter(g => g.zone === garment.zone && (!onlyFavorites || !garment.favorite || g.favorite)).sort((a,b) => favoritesFirst ? Number(b.favorite) - Number(a.favorite) : 0).findIndex(g => g.id === garment.id),
                     );
                     setQuery("");
                   }}
@@ -735,7 +692,7 @@ export default function OutfitBuilder({
           <button
             className="btn btn-primary"
             aria-label="Guardar conjunto"
-            disabled={busy || !items.length || !stageReady}
+            disabled={busy || !items.length || !stageReady || !assets}
             onClick={() => void save()}
           >
             <Save />
@@ -743,7 +700,13 @@ export default function OutfitBuilder({
           </button>
         </div>
       </div>
+      <div className="selection-options">
+        <div className="view-toggle" aria-label="Modo del probador"><button aria-pressed={viewMode === "body"} onClick={() => changeView("body")}>Sobre cuerpo</button><button aria-pressed={viewMode === "panel"} onClick={() => changeView("panel")}>Panel</button></div>
+        <label><input type="checkbox" checked={onlyFavorites} onChange={e => { setOnlyFavorites(e.target.checked); setIndices({}); }}/> Solo favoritos</label>
+        <label><input type="checkbox" checked={favoritesFirst} onChange={e => { setFavoritesFirst(e.target.checked); setIndices({}); }}/> Favoritos primero</label>
+      </div>
       <div className="try-space">
+        <div className="body-stage-area">
         <BuilderStage
             pose={pose}
             items={items}
@@ -757,29 +720,18 @@ export default function OutfitBuilder({
             setItems={setItems}
             stageRef={stageRef}
             setReady={setStageReady}
+            onFrame={setFrame}
           />
-        <div className="carousel-bands">
-          {zones.map((zone) => (
-            <CarouselBand
-              key={zone}
-              zone={zone}
-              garments={byZone[zone]}
-              index={indices[zone] || 0}
-              top={bandTops[zone]}
-              onIndex={(index) => setZoneIndex(zone, index)}
-              onAdd={(index) => addZone(zone, index)}
-              addedGarmentIds={addedGarmentIds}
-              onMotion={(index, pixels) => {
-                const nextPixels = Math.round(Math.max(-150, Math.min(150, pixels)) * 2) / 2;
-                setMotions((old) =>
-                  old[zone]?.index === index && old[zone]?.pixels === nextPixels
-                    ? old
-                    : { ...old, [zone]: { index, pixels: nextPixels } },
-                );
-              }}
-            />
-          ))}
         </div>
+        {!assets && <div className="asset-status" role="status">{assetError ? <><span>No se pudieron cargar las prendas.</span><button className="btn" onClick={() => { setAssetError(false); setAssetAttempt(n => n + 1); }}>Reintentar</button></> : "Preparando prendas…"}</div>}
+        {assets && <div className={viewMode === "panel" ? "selection-panel" : "body-bands"}
+          style={viewMode === "body" ? { width: frame.width, height: frame.height, top: frame.top, left: frame.left } : undefined}>
+          {zones.map(zone => <CarouselBand key={zone} zone={zone} garments={byZone[zone]} index={indices[zone] || 0}
+            top={bandTops[zone]} onIndex={index => setZoneIndex(zone, index)} onAdd={index => addZone(zone, index)}
+            addedGarmentIds={addedGarmentIds} poseId={poseId} anchors={anchors} frame={frame} panel={viewMode === "panel"}
+            onFavorite={favoriteGarment} assets={assets}/>) }
+          {onlyFavorites && !zones.some(zone => byZone[zone].length) && <span className="empty">Marca prendas como favoritas para verlas aquí.</span>}
+        </div>}
       </div>
       {active && (
         <div className="active-controls">

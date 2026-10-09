@@ -32,15 +32,18 @@ export default async function TryPage({
   const data = {
     aiTryOnEnabled: process.env.AI_TRYON_ENABLED === "true",
     startWithoutPose: mode === "flat",
+    userId: user.id,
     poses: poses.map((p) => ({
       id: p.id,
       name: p.name,
+      favorite: p.favorite,
       mediaId: p.normalizedMedia.id,
       anchors: parseAnchors(p.anchors),
     })),
     garments: garments.map((g) => ({
       id: g.id,
       name: g.name,
+      favorite: g.favorite,
       brand: g.brand,
       subtype: g.subtype,
       zone: g.zone,

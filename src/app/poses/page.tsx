@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Plus, UserRound } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import FavoriteGrid from "@/components/FavoriteGrid";
 import DeleteButton from "@/components/DeleteButton";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -31,8 +32,7 @@ export default async function PosesPage() {
         </Link>
       </header>
       {poses.length ? (
-        <div className="grid">
-          {poses.map((p) => (
+        <FavoriteGrid kind="pose" entries={poses.map(p => ({ id: p.id, favorite: p.favorite, content: (
             <article className="card" key={p.id}>
               <Link href={`/poses/${p.id}`} className="image-card">
                 <img
@@ -55,8 +55,7 @@ export default async function PosesPage() {
                 </div>
               </div>
             </article>
-          ))}
-        </div>
+          ) }))}/>
       ) : (
         <div className="empty">
           <UserRound />

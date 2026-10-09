@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import BackgroundEditor from "./BackgroundEditor";
+import { placementRenderSize } from "@/lib/placement";
 import { subtypeLabels, zoneLabels } from "@/lib/labels";
 
 type Placement = {
@@ -69,6 +70,7 @@ export default function GarmentDetailEditor({
   );
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [processed, setProcessed] = useState<Blob | null>(null);
+  const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [processedUrl, setProcessedUrl] = useState("");
   const [editorFile, setEditorFile] = useState<File | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -372,12 +374,14 @@ export default function GarmentDetailEditor({
                 src={processedUrl || `/api/media/${garment.processedMediaId}`}
                 alt=""
                 className="overlay-garment"
+                onLoad={event => setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
                 style={{
                   left: `${current.x / 9}%`,
                   top: `${current.y / 12}%`,
-                  width: `${current.scaleX * 100}%`,
+                  width: `${placementRenderSize(imageSize.width, imageSize.height, current).width / 9}%`,
+                  height: `${placementRenderSize(imageSize.width, imageSize.height, current).height / 12}%`,
                   opacity: current.opacity,
-                  transform: `translate(-50%,-50%) scaleY(${current.scaleY / current.scaleX}) rotate(${current.rotation}deg)`,
+                  transform: `translate(-50%,-50%) rotate(${current.rotation}deg)`,
                 }}
               />
             </div>

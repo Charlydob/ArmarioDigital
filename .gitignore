@@ -8,3 +8,7 @@ coverage
 data
 public/uploads
 work
+
+test-results
+playwright-report
+src/app/mobile-test-fixture

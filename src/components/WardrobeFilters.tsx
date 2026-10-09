@@ -2,8 +2,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Heart } from "lucide-react";
+import FavoriteButton from "./FavoriteButton";
 import { subtypeLabels } from "@/lib/labels";
 type G = {
+  favorite: boolean;
   id: string;
   name: string;
   brand: string | null;
@@ -22,18 +24,22 @@ const filters = [
   ["WISHLIST", "Wishlist"],
 ];
 export default function WardrobeFilters({ garments }: { garments: G[] }) {
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
+  const [only, setOnly] = useState(false);
+  const [first, setFirst] = useState(true);
   const [filter, setFilter] = useState("ALL");
   const [q, setQ] = useState("");
   const shown = useMemo(
     () =>
       garments.filter(
         (g) =>
+          (!only || (favorites[g.id] ?? g.favorite)) &&
           (filter === "ALL" || g.zone === filter || g.status === filter) &&
           `${g.name} ${g.brand || ""} ${g.subtype}`
             .toLowerCase()
             .includes(q.toLowerCase()),
-      ),
-    [garments, filter, q],
+      ).sort((a,b) => first ? Number(favorites[b.id] ?? b.favorite)-Number(favorites[a.id] ?? a.favorite) : 0),
+    [garments, filter, q, favorites, only, first],
   );
   return (
     <>
@@ -55,9 +61,10 @@ export default function WardrobeFilters({ garments }: { garments: G[] }) {
           </button>
         ))}
       </div>
+      <div className="favorite-filters"><label><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Solo favoritos</label><label><input type="checkbox" checked={first} onChange={e=>setFirst(e.target.checked)}/> Favoritos primero</label></div>
       <div className="grid">
         {shown.map((g) => (
-          <Link href={`/armario/${g.id}`} className="card" key={g.id}>
+          <div className="favorite-card" key={g.id}><FavoriteButton kind="garment" id={g.id} favorite={favorites[g.id] ?? g.favorite} onChange={value=>setFavorites(old=>({...old,[g.id]:value}))}/><Link href={`/armario/${g.id}`} className="card">
             <div className="image-card">
               <img
                 src={`/api/media/${g.mediaId}`}
@@ -78,7 +85,7 @@ export default function WardrobeFilters({ garments }: { garments: G[] }) {
                 {subtypeLabels[g.subtype] || g.subtype}
               </span>
             </div>
-          </Link>
+          </Link></div>
         ))}
       </div>
       {!shown.length && (

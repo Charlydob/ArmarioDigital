@@ -94,6 +94,8 @@ model Pose {
   updatedAt         DateTime @updatedAt
   placements        GarmentPosePlacement[]
   outfits           Outfit[]
+  favorite Boolean @default(false)
+
 }
 
 model Garment {
@@ -117,6 +119,8 @@ model Garment {
   outfitItems      OutfitItem[]
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  favorite Boolean @default(false)
+
 }
 
 model GarmentPosePlacement {
@@ -155,6 +159,8 @@ model Outfit {
   aiTryOnJobs    AiTryOnJob[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+  favorite Boolean @default(false)
+
 }
 
 model AiTryOnJob {
