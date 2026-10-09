@@ -1,0 +1,77 @@
+name: Deploy ArmarioDigital
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: armario-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure dedicated SSH key
+        shell: bash
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_KNOWN_HOSTS: ${{ secrets.HETZNER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${HETZNER_SSH_KEY:?Missing HETZNER_SSH_KEY}"
+          : "${HETZNER_KNOWN_HOSTS:?Missing HETZNER_KNOWN_HOSTS}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_KEY}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${HETZNER_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+
+      - name: Deploy on Hetzner
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PORT: ${{ secrets.HETZNER_PORT }}
+        run: |
+          set -euo pipefail
+          : "${HETZNER_HOST:?Missing HETZNER_HOST}"
+          : "${HETZNER_USER:?Missing HETZNER_USER}"
+          : "${HETZNER_PORT:?Missing HETZNER_PORT}"
+          echo "Deploying ${GITHUB_SHA} from main..."
+          ssh \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "${HETZNER_PORT}" \
+            "${HETZNER_USER}@${HETZNER_HOST}"
+
+      - name: Verify public HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          http_code="$(curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --retry 10 \
+            --retry-all-errors \
+            --retry-delay 3 \
+            --max-time 20 \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            https://armario.charlydob.com/)"
+          test "${http_code}" = "200"
+          echo "Production health check returned HTTP ${http_code}."
+

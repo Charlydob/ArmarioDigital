@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly APP_NAME="armario-digital"
+readonly APP_USER="armario"
+readonly DEPLOY_USER="armario-deploy"
+readonly REPO="/opt/armario-digital/repo"
+readonly RELEASES="/opt/armario-digital/releases"
+readonly CURRENT="/opt/armario-digital/current"
+readonly ENV_FILE="/etc/armario-digital.env"
+readonly SERVICE="armario-digital.service"
+readonly PUBLIC_URL="https://armario.charlydob.com/"
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "This deploy command must run through its restricted sudo rule." >&2
+  exit 1
+fi
+
+exec 9>"/run/lock/${APP_NAME}-deploy.lock"
+if ! flock -n 9; then
+  echo "Another ${APP_NAME} deploy is already running." >&2
+  exit 1
+fi
+
+previous_release="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
+switched=0
+
+rollback() {
+  local status=$?
+
+  echo "Deploy failed with status ${status}." >&2
+  if [[ ${switched} -eq 1 && -n ${previous_release} && -d ${previous_release} ]]; then
+    echo "Restoring ${previous_release}." >&2
+    ln -sfn "${previous_release}" "${CURRENT}.rollback"
+    mv -Tf "${CURRENT}.rollback" "${CURRENT}"
+    systemctl restart "${SERVICE}" || true
+  fi
+  exit "${status}"
+}
+trap rollback ERR
+
+run_as_deploy() {
+  runuser --preserve-environment -u "${DEPLOY_USER}" -- env \
+    HOME="/home/${DEPLOY_USER}" \
+    XDG_CONFIG_HOME="/home/${DEPLOY_USER}/.config" \
+    npm_config_cache="/home/${DEPLOY_USER}/.npm" \
+    "$@"
+}
+
+echo "Fetching origin/main..."
+run_as_deploy git -C "${REPO}" fetch --prune origin main
+run_as_deploy git -C "${REPO}" checkout main
+run_as_deploy git -C "${REPO}" pull --ff-only origin main
+deployed_commit="$(run_as_deploy git -C "${REPO}" rev-parse HEAD)"
+echo "Commit to deploy: ${deployed_commit}"
+
+cd "${REPO}"
+echo "Installing locked dependencies..."
+run_as_deploy npm ci --no-audit --no-fund
+
+set -a
+# shellcheck disable=SC1090
+source "${ENV_FILE}"
+set +a
+
+echo "Building production artifact..."
+NODE_OPTIONS=--max-old-space-size=2048 run_as_deploy npm run build
+
+echo "Applying Prisma migrations..."
+run_as_deploy npm run db:migrate
+
+release="${RELEASES}/${deployed_commit}"
+pending_release="${release}.new"
+echo "Preparing release ${release}..."
+rm -rf -- "${pending_release}"
+install -d -o "${DEPLOY_USER}" -g "${APP_USER}" "${pending_release}"
+run_as_deploy cp -a .next/standalone/. "${pending_release}/"
+if [[ -d .next/static ]]; then
+  run_as_deploy mkdir -p "${pending_release}/.next"
+  run_as_deploy cp -a .next/static "${pending_release}/.next/static"
+fi
+if [[ -d public ]]; then
+  run_as_deploy cp -a public "${pending_release}/public"
+fi
+chmod -R a+rX "${pending_release}"
+
+if [[ -d ${release} ]]; then
+  rm -rf -- "${release}"
+fi
+mv "${pending_release}" "${release}"
+ln -sfn "${release}" "${CURRENT}.new"
+mv -Tf "${CURRENT}.new" "${CURRENT}"
+switched=1
+
+echo "Restarting ${SERVICE}..."
+systemctl restart "${SERVICE}"
+systemctl is-active --quiet "${SERVICE}"
+
+echo "Waiting for local health check..."
+for attempt in $(seq 1 20); do
+  if curl --fail --silent --show-error --location --max-time 10 http://127.0.0.1:3012/ >/dev/null; then
+    break
+  fi
+  if [[ ${attempt} -eq 20 ]]; then
+    echo "Local health check failed." >&2
+    false
+  fi
+  sleep 2
+done
+
+echo "Checking public HTTPS..."
+http_code="$(curl --fail --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{http_code}' "${PUBLIC_URL}")"
+[[ ${http_code} == "200" ]]
+
+trap - ERR
+echo "Deploy succeeded: commit=${deployed_commit} http=${http_code}"
+systemctl status "${SERVICE}" --no-pager --lines=10

@@ -24,6 +24,22 @@ Next.js 15 (standalone), React 19, TypeScript, Prisma/PostgreSQL, Konva y almace
 
 El build usa `output: standalone`; el paso `postbuild` incorpora automáticamente los assets estáticos y públicos. En Hetzner, el artefacto vive en `/opt/armario-digital/current`, las imágenes en `/var/lib/armario-digital`, los secretos en `/etc/armario-digital.env` y el proceso en `armario-digital.service`. Caddy publica el servicio local `127.0.0.1:3012`. Las migraciones se aplican antes de cada reinicio con `npm run db:migrate` desde el checkout o con el Prisma CLI del artefacto de despliegue.
 
+Cada push a `main` ejecuta la GitHub Action **Deploy ArmarioDigital**. El
+workflow conecta con la clave dedicada del usuario `armario-deploy`, actualiza
+`/opt/armario-digital/repo`, instala las dependencias bloqueadas, compila,
+aplica las migraciones y reinicia únicamente `armario-digital.service`. El
+cambio de release es atómico y el script restaura el release anterior si el
+reinicio o el health check fallan.
+
+El repositorio necesita estos GitHub Actions Secrets (nunca valores reales en
+Git):
+
+- `HETZNER_HOST`: host de producción.
+- `HETZNER_USER`: usuario SSH de despliegue (`armario-deploy`).
+- `HETZNER_PORT`: puerto SSH.
+- `HETZNER_SSH_KEY`: clave privada dedicada al workflow.
+- `HETZNER_KNOWN_HOSTS`: clave pública del host SSH fijada para evitar MITM.
+
 Las imágenes nunca se sirven como ficheros públicos: `/api/media/:id` exige una sesión válida y comprueba el propietario.
 
 ## Probador físico y favoritos
