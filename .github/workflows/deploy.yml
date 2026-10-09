@@ -15,12 +15,12 @@ concurrency:
 jobs:
   deploy:
     name: Deploy production
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure dedicated SSH key
         shell: bash
@@ -74,4 +74,3 @@ jobs:
             https://armario.charlydob.com/)"
           test "${http_code}" = "200"
           echo "Production health check returned HTTP ${http_code}."
-
